@@ -1,0 +1,359 @@
+---
+title: "Actuarial Severity Fitting for Limits and Deductibles"
+author: "Greg Sollenberger"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Actuarial Severity Fitting for Limits and Deductibles}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(actuarialfitdist)
+set.seed(20261001)
+```
+
+# What this package assumes
+
+`actuarialfitdist` is designed around a claim-level **ground-up severity** likelihood.
+
+This assumption is important enough to state repeatedly:
+
+* `loss` is the ground-up loss severity.
+* `loss` is not the insurer payment after deductible.
+* `loss` is not an excess-of-deductible amount.
+* `loss` is not an ACV/depreciated payment unless the analyst has already converted the experience to the intended common ground-up basis.
+* The deductible column tells the fitter that otherwise-identical claims below the deductible are not observed.
+* A finite limit tells the fitter that a claim recorded at or above the limit is right-censored there.
+
+For an exact observation, the row likelihood is proportional to `f(loss) / S(deductible)`. For a limit-censored observation it is `S(limit) / S(deductible)`.
+
+If a row has likelihood weight `w`, its log-likelihood contribution is `w` times the ordinary row log-likelihood. An integer weight of 2 therefore has exactly the same likelihood effect as repeating that claim row twice.
+
+# 1. Auto property-damage limit analysis
+
+Suppose an insurer is analyzing property-damage severity. There is no deductible in this example, but policies have different limits. A claim that reaches its policy limit is recorded at the limit and is right-censored.
+
+```{r auto-limit-data}
+n <- 5000
+true_loss <- rlnorm(n, meanlog = log(9000), sdlog = 0.95)
+policy_limit <- sample(c(10000, 25000, 50000, 100000), n, replace = TRUE,
+                       prob = c(0.15, 0.35, 0.35, 0.15))
+
+pd <- data.frame(
+  loss = pmin(true_loss, policy_limit),
+  deductible = 0,
+  limit = policy_limit
+)
+
+mean(pd$loss >= pd$limit)
+```
+
+Fit several plausible severity families:
+
+```{r auto-limit-fit}
+pd_candidates <- fit_severity_candidates(
+  pd,
+  loss = "loss",
+  deductible = "deductible",
+  limit = "limit",
+  distributions = c("lognormal", "weibull", "gamma", "burr", "loglogistic")
+)
+
+pd_candidates$comparison
+```
+
+The package does not automatically choose one distribution. The statistical fit can be compared with the business output directly:
+
+```{r auto-limit-factors}
+pd_factors <- severity_factors(
+  pd_candidates,
+  deductible = 0,
+  limit = c(10000, 25000, 50000, 100000, 250000),
+  base_deductible = 0,
+  base_limit = 25000
+)
+
+head(pd_factors)
+```
+
+The factor table is intentionally long-format. `compare_factors()` provides a side-by-side view when desired.
+
+```{r auto-limit-side-by-side}
+compare_factors(
+  pd_candidates,
+  metric = "rating_factor",
+  deductible = 0,
+  limit = c(10000, 25000, 50000, 100000),
+  base_deductible = 0,
+  base_limit = 25000
+)
+```
+
+# 2. Auto collision deductible analysis
+
+Now consider collision severity with varying deductibles and no finite policy limit. Ground-up losses below the deductible never appear in the claim sample.
+
+```{r collision-data}
+n <- 7000
+collision_ground_up <- rgamma(n, shape = 2.2, scale = 3200)
+collision_ded <- sample(c(250, 500, 1000, 2000), n, replace = TRUE,
+                        prob = c(0.10, 0.35, 0.40, 0.15))
+keep <- collision_ground_up > collision_ded
+
+collision <- data.frame(
+  loss = collision_ground_up[keep],
+  deductible = collision_ded[keep],
+  limit = Inf
+)
+```
+
+The ground-up amount is retained. We do **not** subtract the deductible before fitting.
+
+```{r collision-fit}
+collision_fit <- fit_severity(
+  collision,
+  loss = "loss",
+  deductible = "deductible",
+  limit = "limit",
+  distribution = "gamma"
+)
+
+summary(collision_fit)
+```
+
+Generate deductible factors relative to a $500 deductible:
+
+```{r collision-factors}
+severity_factors(
+  collision_fit,
+  deductible = c(250, 500, 1000, 2000, 5000),
+  limit = Inf,
+  base_deductible = 500,
+  base_limit = Inf
+)
+```
+
+# 3. Homeowners deductible analysis with varying Coverage A
+
+For homeowners, claim severity can vary systematically with the insured amount. The optional `scale_by` column lets the fitted severity scale vary linearly with an analyst-supplied numeric variable.
+
+Here Coverage A is the scaling variable. The same mechanism could instead use TIV, vehicle value, or a user-created transformation in another line of business.
+
+```{r homeowners-data}
+n <- 10000
+coverage_a <- sample(seq(150000, 900000, by = 25000), n, replace = TRUE)
+home_ded <- sample(c(1000, 2500, 5000, 10000), n, replace = TRUE)
+shape <- 1.35
+scale_coef <- 0.075
+latent_scale <- scale_coef * coverage_a
+home_ground_up <- rweibull(n, shape = shape, scale = latent_scale)
+home_limit <- coverage_a
+keep <- home_ground_up > home_ded
+
+home <- data.frame(
+  loss = pmin(home_ground_up[keep], home_limit[keep]),
+  deductible = home_ded[keep],
+  limit = home_limit[keep],
+  coverage_a = coverage_a[keep]
+)
+```
+
+Fit a Weibull model with zero intercept:
+
+```{r homeowners-fit}
+home_fit <- fit_severity(
+  home,
+  loss = "loss",
+  deductible = "deductible",
+  limit = "limit",
+  distribution = "weibull",
+  scale_by = "coverage_a",
+  scale_intercept = FALSE
+)
+
+summary(home_fit)
+```
+
+When `scale_intercept = FALSE`, the intercept is exactly zero, not merely shrunk toward zero or omitted from printed output.
+
+For the Weibull family, the native scale is `scale_coef * coverage_a`, so the fitted mean is that quantity times `Gamma(1 + 1 / shape)`. Other supported families use parameterizations that preserve the same intended proportional-mean relationship when their mean is finite.
+
+Factor output can be produced for arbitrary Coverage A values:
+
+```{r homeowners-factors}
+severity_factors(
+  home_fit,
+  scale_value = c(200000, 400000, 600000, 800000),
+  deductible = c(1000, 2500, 5000),
+  limit = c(100000, 250000, 500000),
+  base_deductible = 1000,
+  base_limit = 250000
+)
+```
+
+## Scaling diagnostics
+
+A severity histogram across the entire Coverage A range is not a comparison to one fitted distribution: each Coverage A value implies a different fitted severity distribution. `fit_plot_data()` can therefore restrict the comparison to a meaningful scale range while still retaining the exact row-level scale, deductible, and limit values inside that range.
+
+```{r homeowners-fit-plot, fig.width=7, fig.height=4}
+plot_fit(
+  home_fit,
+  type = "density",
+  scale_range = c(300000, 450000),
+  nsim = 10,
+  seed = 11
+)
+```
+
+A separate scaling diagnostic asks whether the assumed relationship across Coverage A is reasonable.
+
+```{r homeowners-scale-plot, fig.width=7, fig.height=4}
+plot_scaling_fit(home_fit, bins = 10, nsim = 20, seed = 12)
+```
+
+The actual and modeled observed means are directly comparable because the modeled series reproduces each claim row's deductible and censoring structure. The fitted ground-up mean series is also shown to make the underlying severity-scaling relationship visible.
+
+# 4. Spliced body-tail fitting
+
+A single family may fit the body of a severity distribution reasonably while missing the upper tail. `fit_spliced_severity()` supports a body family below a threshold and a separate tail family above it.
+
+The two densities are normalized on their respective sides of the threshold. A body probability is estimated. Density continuity is **not required**.
+
+The threshold may be fixed by the analyst or searched over candidate values.
+
+```{r splice-data}
+n <- 7000
+threshold_true <- 30000
+is_body <- runif(n) < 0.90
+
+# Draw body values from a lognormal conditional on being below the threshold.
+Fb <- plnorm(threshold_true, log(9000), 0.75)
+body_draw <- qlnorm(runif(n, 0, Fb), log(9000), 0.75)
+
+# Draw Pareto-II tail values conditional on exceeding the threshold.
+shape_tail <- 2.1
+scale_tail <- 18000
+Ft <- 1 - (1 + threshold_true / scale_tail)^(-shape_tail)
+u_tail <- runif(n, Ft, 1)
+tail_draw <- scale_tail * ((1 - u_tail)^(-1 / shape_tail) - 1)
+
+splice_ground_up <- ifelse(is_body, body_draw, tail_draw)
+splice_ded <- sample(c(0, 1000, 2500), n, replace = TRUE)
+splice_lim <- sample(c(50000, 100000, 250000, Inf), n, replace = TRUE)
+keep <- splice_ground_up > splice_ded
+
+splice_dat <- data.frame(
+  loss = pmin(splice_ground_up[keep], splice_lim[keep]),
+  deductible = splice_ded[keep],
+  limit = splice_lim[keep]
+)
+```
+
+Search for a threshold:
+
+```{r splice-fit}
+splice_fit <- fit_spliced_severity(
+  splice_dat,
+  loss = "loss",
+  deductible = "deductible",
+  limit = "limit",
+  body = "lognormal",
+  tail = "pareto2",
+  threshold_method = "search",
+  threshold_probs = c(0.60, 0.95),
+  threshold_grid = 12
+)
+
+splice_fit
+splice_fit$threshold_search
+```
+
+The same factor-generation interface works for the spliced model:
+
+```{r splice-factors}
+severity_factors(
+  splice_fit,
+  deductible = c(0, 1000, 5000),
+  limit = c(25000, 50000, 100000, 250000),
+  base_deductible = 0,
+  base_limit = 50000
+)
+```
+
+# Valuation or depreciation at the payment stage
+
+The fitting layer does not decide whether historical claims are RCV, ACV, or some other valuation basis. The analyst should first express the experience on a consistent ground-up basis.
+
+At factor generation, a multiplicative valuation factor can then represent an ACV-type payment transformation. If the ground-up replacement-cost severity is `X`, the package evaluates payments of the form
+
+```text
+min(max(valuation_factor * X - deductible, 0), limit)
+```
+
+For example:
+
+```{r valuation}
+severity_factors(
+  home_fit,
+  scale_value = 400000,
+  deductible = 2500,
+  limit = 25000,
+  valuation_factor = c(1.00, 0.80, 0.60, 0.40, 0.20),
+  base_deductible = 2500,
+  base_limit = 25000,
+  base_valuation_factor = 1
+)
+```
+
+# Weights and fixed parameters
+
+A likelihood weight multiplies the row log-likelihood. Integer weights therefore behave as frequency weights.
+
+```{r weights}
+weighted_collision <- collision[1:1000, ]
+weighted_collision$w <- sample(1:3, nrow(weighted_collision), replace = TRUE)
+
+weighted_fit <- fit_severity(
+  weighted_collision,
+  loss = "loss",
+  deductible = "deductible",
+  limit = "limit",
+  distribution = "gamma",
+  weights = "w",
+  fixed = list(shape = 2.2)
+)
+
+coef(weighted_fit)
+```
+
+# Hessian and bootstrap uncertainty
+
+`vcov()` and `confint()` use a numerical Hessian of the optimized negative log-likelihood. These are large-sample Wald approximations; the Hessian is evaluated numerically rather than supplied as hand-derived second derivatives for every family.
+
+```{r hessian}
+vcov(collision_fit)
+confint(collision_fit)
+```
+
+A lightweight parametric or case bootstrap is also available. Parametric bootstrap retains the fitted portfolio's deductible, limit, scaling, and weight structure.
+
+```{r bootstrap, eval=FALSE}
+boot <- bootstrap_fit(collision_fit, R = 200, type = "parametric", seed = 99)
+head(boot$estimates)
+boot$success_rate
+```
+
+For a searched spliced fit, `refit_threshold = FALSE` reuses the selected threshold in each bootstrap replicate by default. Set it to `TRUE` to repeat threshold search, understanding that this is much more computationally expensive.
+
+# Custom ggplot2 and Plotly graphics
+
+The plot-building data are part of the public interface:
+
+```{r custom-data}
+d <- fit_plot_data(home_fit, scale_range = c(300000, 450000), nsim = 10, seed = 5)
+head(d)
+```
+
+This allows analysts to use their own graphics conventions without reproducing the statistically important observation logic. See `inst/examples/08_plotly_diagnostics.R` for Plotly examples.

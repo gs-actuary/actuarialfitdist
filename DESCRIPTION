@@ -1,0 +1,34 @@
+Package: actuarialfitdist
+Type: Package
+Title: Actuarial Severity Distribution Fitting for Limits and Deductibles
+Version: 0.1.0
+Authors@R: person("Greg", "Sollenberger", email = "yagreg7@yahoo.com", role = c("aut", "cre", "cph"))
+Description: Fits actuarial claim severity distributions to ground-up loss data while
+    accounting for deductible truncation, policy-limit censoring, observation weights,
+    optional severity scaling variables, and fixed parameters. Supports single-family
+    and spliced body-tail models, candidate-model comparison, limited expected values,
+    loss elimination ratios, increased limits factors, deductible and limit rating
+    factors, valuation or depreciation adjustments, simulation, diagnostics, and
+    uncertainty estimation. The package is designed for property and casualty
+    actuarial applications in which analysts fit ground-up severity and translate the
+    fitted distribution into pricing factors for limits, deductibles, and valuation
+    provisions.
+License: MIT + file LICENSE
+URL: https://github.com/gs-actuary/actuarialfitdist
+BugReports: https://github.com/gs-actuary/actuarialfitdist/issues
+Encoding: UTF-8
+Depends: R (>= 4.1.0)
+Imports:
+    ggplot2,
+    stats,
+    utils
+Suggests:
+    fitdistrplus,
+    knitr,
+    plotly,
+    rmarkdown,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+NeedsCompilation: no
+Config/roxygen2/version: 8.1.0

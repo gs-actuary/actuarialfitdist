@@ -22,7 +22,8 @@
 .afd_sim_observed_rows <- function(fit, data, reps = 1L) {
   cols <- fit$columns
   n <- nrow(data)
-  d <- data[[cols$deductible]]; u <- data[[cols$limit]]
+  d <- if (cols$deductible %in% names(data)) data[[cols$deductible]] else rep(0, n)
+  u <- if (cols$limit %in% names(data)) data[[cols$limit]] else rep(Inf, n)
   z <- if (is.null(cols$scale_by)) rep(NA_real_, n) else data[[cols$scale_by]]
   ans <- vector("list", reps)
   for (r in seq_len(reps)) {
@@ -58,6 +59,15 @@
 #'   number of rows in `newdata`.
 #' @param scale_value Optional scale values for ground-up simulation.
 #' @param ... Unused.
+#' @return Data frame containing observed or ground-up simulated loss amounts.
+#'   For `type = "observed"`, the data reflect the original row-specific
+#'   deductible truncation and limit censoring mechanism.
+#' @examples
+#' set.seed(1)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", hessian = FALSE)
+#' head(simulate(fit, nsim = 1, seed = 123))
+#' head(simulate(fit, nsim = 1, seed = 123, type = "ground_up", n = 5))
 #' @export
 simulate.actuarialfitdist_fit <- function(object, nsim = 1, seed = NULL,
                                           type = c("observed", "ground_up"),
@@ -68,8 +78,7 @@ simulate.actuarialfitdist_fit <- function(object, nsim = 1, seed = NULL,
   nsim <- as.integer(nsim)
   if (nsim < 1L) .afd_stop("`nsim` must be at least 1.")
   if (type == "observed") {
-    needed <- unlist(object$columns[c("deductible", "limit", "scale_by")], use.names = FALSE)
-    needed <- needed[!is.na(needed) & nzchar(needed)]
+    needed <- object$columns$scale_by %||% character()
     if (!is.data.frame(newdata) || any(!needed %in% names(newdata))) .afd_stop("`newdata` does not contain all columns needed to reproduce the observation mechanism.")
     return(.afd_sim_observed_rows(object, newdata, nsim))
   }

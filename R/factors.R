@@ -27,16 +27,18 @@
 #' @param limit Positive severity limit.
 #' @param scale_value Optional scaling value.
 #' @return Numeric limited expected severity.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
+#' limited_expected_value(fit, 25000)
 #' @export
 limited_expected_value <- function(object, limit, scale_value = NULL) {
   if (!inherits(object, "actuarialfitdist_fit")) .afd_stop("`object` must be a fitted actuarialfitdist model.")
   n <- max(length(limit), if (is.null(scale_value)) 1L else length(scale_value))
   lim <- .afd_recycle(limit, n, "limit")
   sv <- if (is.null(scale_value)) rep(NA_real_, n) else .afd_recycle(scale_value, n, "scale_value")
-  vapply(seq_len(n), function(i) {
-    svi <- if (is.na(sv[i])) NULL else sv[i]
-    .afd_expected_payment_one(object, 0, lim[i], svi, 1)
-  }, numeric(1))
+  .afd_payments_bulk(object, rep(0, n), lim, sv, rep(1, n))
 }
 
 #' Loss elimination ratio
@@ -50,6 +52,11 @@ limited_expected_value <- function(object, limit, scale_value = NULL) {
 #' @param scale_value Optional scaling value.
 #' @param valuation_factor Multiplicative valuation factor applied before the deductible.
 #' @return Numeric LER.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
+#' loss_elimination_ratio(fit, deductible = 1000)
 #' @export
 loss_elimination_ratio <- function(object, deductible, scale_value = NULL, valuation_factor = 1) {
   n <- max(length(deductible), length(valuation_factor), if (is.null(scale_value)) 1L else length(scale_value))
@@ -77,6 +84,11 @@ loss_elimination_ratio <- function(object, deductible, scale_value = NULL, valua
 #' @param deductible Deductible applied to both target and base coverage.
 #' @param valuation_factor Multiplicative valuation factor applied before deductible.
 #' @return Numeric ILF.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
+#' increased_limits_factor(fit, limit = 50000, base_limit = 25000)
 #' @export
 increased_limits_factor <- function(object, limit, base_limit, scale_value = NULL,
                                     deductible = 0, valuation_factor = 1) {
@@ -94,36 +106,120 @@ increased_limits_factor <- function(object, limit, base_limit, scale_value = NUL
   }, numeric(1))
 }
 
+# Vectorized limited expected values for common positive severity families.
+# For other families (and splices), use the established numerical integral.
+# Note: policy LIMIT in expected_payment is a PAYMENT cap after deductible.
+# Consequently E[min((v*X-d)+, L)] = v*(A((d+L)/v)-A(d/v)),
+# not A(L)-A(d). This distinction is material for ILFs and rating factors.
+.afd_lev_fast <- function(fit, t, scale_value = NULL) {
+  if (length(t) == 0L) return(numeric())
+  if (fit$model == "single" && fit$distribution %in%
+      c("exponential", "weibull", "gamma", "lognormal")) {
+    parts <- .afd_single_eval_parts(fit, scale_value)
+    s <- parts$s; p <- parts$shape
+    ans <- switch(fit$distribution,
+      exponential = -s * expm1(-t / s),
+      weibull = s * gamma(1 + 1 / p$shape) *
+        stats::pgamma((t / s)^p$shape, shape = 1 + 1 / p$shape) +
+        t * exp(-(t / s)^p$shape),
+      gamma = s * p$shape * stats::pgamma(t, shape = p$shape + 1, scale = s) +
+        t * stats::pgamma(t, shape = p$shape, scale = s, lower.tail = FALSE),
+      lognormal = {
+        q <- (log(t / s) - p$sdlog^2) / p$sdlog
+        s * exp(p$sdlog^2 / 2) * stats::pnorm(q) +
+          t * stats::plnorm(t, meanlog = log(s), sdlog = p$sdlog, lower.tail = FALSE)
+      })
+    # 0*Inf is NaN at infinite limits. Replace using the analytic mean.
+    infinite <- is.infinite(t)
+    if (any(infinite)) ans[infinite] <- .afd_fit_mean(fit, scale_value)
+    ans[t == 0] <- 0
+    return(ans)
+  }
+  vapply(t, function(x) {
+    if (x == 0) return(0)
+    if (is.infinite(x)) return(.afd_fit_mean(fit, scale_value))
+    tryCatch(stats::integrate(function(y)
+      .afd_fit_cdf(fit, y, scale_value, lower.tail = FALSE),
+      lower = 0, upper = x, rel.tol = 1e-7, subdivisions = 500L)$value,
+      error = function(e) NA_real_)
+  }, numeric(1))
+}
+
+.afd_payments_bulk <- function(fit, deductible, limit, scale_value, valuation_factor) {
+  n <- length(deductible)
+  if (!is.null(fit$columns$scale_by) && anyNA(scale_value))
+    .afd_stop("`scale_value` is required for a model fitted with `scale_by`.")
+  out <- numeric(n)
+  groups <- split(seq_len(n), ifelse(is.na(scale_value), "default", sprintf("%.17g", scale_value)))
+  for (ind in groups) {
+    sv <- if (is.na(scale_value[ind[1L]])) NULL else scale_value[ind[1L]]
+    v <- valuation_factor[ind]; d <- deductible[ind]; lim <- limit[ind]
+    if (any(!is.finite(d) | d < 0) || any(is.na(lim) | lim <= 0) ||
+        any(!is.finite(v) | v < 0)) .afd_stop("Invalid deductible, limit or valuation factor.")
+    active <- v > 0
+    if (!any(active)) next
+    bounds <- c(d[active] / v[active], (d[active] + lim[active]) / v[active])
+    unique_bounds <- unique(bounds)
+    levs <- .afd_lev_fast(fit, unique_bounds, sv)
+    lookup <- match(bounds, unique_bounds)
+    na <- sum(active)
+    lower <- levs[lookup[seq_len(na)]]
+    upper <- levs[lookup[na + seq_len(na)]]
+    val <- v[active] * (upper - lower)
+    # When both expected values diverge, the limited-payment result is not
+    # determined by naive subtraction. Finite payment caps remain finite.
+    # Avoid catastrophic cancellation in the distant tail, where both
+    # limited expectations can round to the same nearly-unlimited mean.
+    bad <- is.nan(val) | (is.finite(val) & val <= 0 & d[active] > 0)
+    if (any(bad)) val[bad] <- v[active][bad] * vapply(which(bad), function(j) {
+      lo <- d[active][j] / v[active][j]
+      hi <- (d[active][j] + lim[active][j]) / v[active][j]
+      tryCatch(stats::integrate(function(y) .afd_fit_cdf(fit, y, sv, lower.tail = FALSE),
+        lo, hi, rel.tol = 1e-7, subdivisions = 500L)$value,
+        error = function(e) NA_real_)
+    }, numeric(1))
+    out[ind[active]] <- pmax(0, val)
+  }
+  out
+}
+
 .afd_factor_grid_single <- function(fit, deductible, limit, scale_value,
                                     valuation_factor, base_deductible,
-                                    base_limit, base_valuation_factor) {
+                                    base_limit, base_valuation_factor,
+                                    grid = "cross") {
   scaling <- !is.null(fit$columns$scale_by)
   if (scaling && is.null(scale_value)) .afd_stop("Supply `scale_value` because the model was fitted with `scale_by`.")
   if (!scaling) scale_value <- NA_real_
-  g <- expand.grid(
-    scale_value = scale_value,
-    deductible = deductible,
-    limit = limit,
-    valuation_factor = valuation_factor,
-    KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE
-  )
-  g$expected_payment <- NA_real_
-  g$limited_expected_severity <- NA_real_
-  g$unlimited_mean <- NA_real_
-  g$LER <- NA_real_
-  g$ILF <- NA_real_
-  g$rating_factor <- NA_real_
-  for (i in seq_len(nrow(g))) {
-    sv <- if (is.na(g$scale_value[i])) NULL else g$scale_value[i]
-    g$expected_payment[i] <- .afd_expected_payment_one(fit, g$deductible[i], g$limit[i], sv, g$valuation_factor[i])
-    g$limited_expected_severity[i] <- limited_expected_value(fit, g$limit[i], sv)
-    g$unlimited_mean[i] <- .afd_fit_mean(fit, sv)
-    g$LER[i] <- loss_elimination_ratio(fit, g$deductible[i], sv, g$valuation_factor[i])
-    g$ILF[i] <- increased_limits_factor(fit, g$limit[i], base_limit, sv,
-                                        deductible = g$deductible[i], valuation_factor = g$valuation_factor[i])
-    base_pay <- .afd_expected_payment_one(fit, base_deductible, base_limit, sv, base_valuation_factor)
-    g$rating_factor[i] <- if (is.finite(base_pay) && base_pay > 0) g$expected_payment[i] / base_pay else NA_real_
+  if (grid == "cross") {
+    g <- expand.grid(scale_value = scale_value, deductible = deductible,
+       limit = limit, valuation_factor = valuation_factor,
+       KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+  } else {
+    n <- max(length(scale_value), length(deductible), length(limit), length(valuation_factor))
+    g <- data.frame(scale_value = .afd_recycle(scale_value, n, "scale_value"),
+      deductible = .afd_recycle(deductible, n, "deductible"),
+      limit = .afd_recycle(limit, n, "limit"),
+      valuation_factor = .afd_recycle(valuation_factor, n, "valuation_factor"))
   }
+  n <- nrow(g); sv <- g$scale_value
+  g$expected_payment <- .afd_payments_bulk(fit, g$deductible, g$limit, sv, g$valuation_factor)
+  g$limited_expected_severity <- .afd_payments_bulk(fit, rep(0, n), g$limit, sv, rep(1, n))
+  sv_unique <- unique(sv)
+  sv_means <- vapply(sv_unique, function(x) .afd_fit_mean(fit,
+    if (is.na(x)) NULL else x), numeric(1))
+  g$unlimited_mean <- sv_means[match(sv, sv_unique)]
+  zero <- rep(0, n); inf <- rep(Inf, n)
+  base_mean <- .afd_payments_bulk(fit, zero, inf, sv, g$valuation_factor)
+  ded_pay <- .afd_payments_bulk(fit, g$deductible, inf, sv, g$valuation_factor)
+  g$LER <- ifelse(is.finite(base_mean) & base_mean > 0, 1 - ded_pay/base_mean, NA_real_)
+  base_limit_pay <- .afd_payments_bulk(fit, g$deductible,
+    rep(base_limit, n), sv, g$valuation_factor)
+  g$ILF <- ifelse(is.finite(base_limit_pay) & base_limit_pay > 0,
+    g$expected_payment / base_limit_pay, NA_real_)
+  base_pay <- .afd_payments_bulk(fit, rep(base_deductible, n),
+    rep(base_limit, n), sv, rep(base_valuation_factor, n))
+  g$rating_factor <- ifelse(is.finite(base_pay) & base_pay > 0,
+    g$expected_payment / base_pay, NA_real_)
   g$distribution <- fit$distribution
   g$model <- fit$model
   g$base_deductible <- base_deductible
@@ -155,23 +251,35 @@ increased_limits_factor <- function(object, limit, base_limit, scale_value = NUL
 #' @param base_deductible Base deductible for `rating_factor`.
 #' @param base_limit Base payment limit for `rating_factor` and ILF calculations.
 #' @param base_valuation_factor Base valuation factor.
+#' @param grid `"cross"` (default) forms the Cartesian product of inputs;
+#'   `"paired"` recycles vectors to matching scenario rows.
 #' @return Long-format data frame.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
+#' severity_factors(fit, deductible = c(500, 1000),
+#'   limit = c(25000, 50000), grid = "paired")
 #' @export
 severity_factors <- function(object, deductible, limit, scale_value = NULL,
                              valuation_factor = 1, base_deductible = 0,
-                             base_limit = Inf, base_valuation_factor = 1) {
+                             base_limit = Inf, base_valuation_factor = 1,
+                             grid = c("cross", "paired")) {
+  grid <- match.arg(grid)
   if (inherits(object, "actuarialfitdist_candidates")) {
-    ok <- vapply(object$fits, inherits, logical(1), what = "actuarialfitdist_fit")
+    ok <- vapply(object$fits, function(f) inherits(f, "actuarialfitdist_fit") &&
+                 f$convergence == 0L, logical(1))
     if (!any(ok)) .afd_stop("No successful candidate fits are available.")
     ans <- lapply(object$fits[ok], .afd_factor_grid_single,
                   deductible = deductible, limit = limit, scale_value = scale_value,
                   valuation_factor = valuation_factor, base_deductible = base_deductible,
-                  base_limit = base_limit, base_valuation_factor = base_valuation_factor)
+                  base_limit = base_limit, base_valuation_factor = base_valuation_factor,
+                  grid = grid)
     return(do.call(rbind, ans))
   }
   if (!inherits(object, "actuarialfitdist_fit")) .afd_stop("`object` must be a fitted model or candidate-comparison object.")
   .afd_factor_grid_single(object, deductible, limit, scale_value, valuation_factor,
-                          base_deductible, base_limit, base_valuation_factor)
+                          base_deductible, base_limit, base_valuation_factor, grid)
 }
 
 #' Compare factor outputs side by side
@@ -183,6 +291,12 @@ severity_factors <- function(object, deductible, limit, scale_value = NULL,
 #' @param metric One output column from `severity_factors()` to compare.
 #' @param ... Arguments passed to `severity_factors()`.
 #' @return Wide data frame with one column per candidate distribution.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' candidates <- fit_severity_candidates(d, "loss",
+#'   distributions = c("lognormal", "gamma"), hessian = FALSE)
+#' compare_factors(candidates, deductible = 1000, limit = c(25000, 50000))
 #' @export
 compare_factors <- function(object, metric = "rating_factor", ...) {
   if (!inherits(object, "actuarialfitdist_candidates")) .afd_stop("`object` must come from `fit_severity_candidates()`.")
@@ -207,6 +321,11 @@ compare_factors <- function(object, metric = "rating_factor", ...) {
 #' @param valuation_factor Nonnegative multiplicative valuation factor applied
 #'   to ground-up severity before deductible and limit.
 #' @return Numeric expected payment(s).
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
+#' expected_payment(fit, deductible = 1000, limit = 25000)
 #' @export
 expected_payment <- function(object, deductible = 0, limit = Inf,
                              scale_value = NULL, valuation_factor = 1) {
@@ -217,8 +336,5 @@ expected_payment <- function(object, deductible = 0, limit = Inf,
   lim <- .afd_recycle(limit, n, "limit")
   v <- .afd_recycle(valuation_factor, n, "valuation_factor")
   sv <- if (is.null(scale_value)) rep(NA_real_, n) else .afd_recycle(scale_value, n, "scale_value")
-  vapply(seq_len(n), function(i) {
-    svi <- if (is.na(sv[i])) NULL else sv[i]
-    .afd_expected_payment_one(object, d[i], lim[i], svi, v[i])
-  }, numeric(1))
+  .afd_payments_bulk(object, d, lim, sv, v)
 }

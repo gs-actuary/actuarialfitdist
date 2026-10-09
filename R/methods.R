@@ -108,6 +108,16 @@ print.actuarialfitdist_candidates <- function(x, ...) {
 #' @param p Probability for quantiles.
 #' @param x Severity value for CDF, survival, or density predictions.
 #' @param ... Unused.
+#' @return Numeric vector of fitted ground-up quantities. For `type = "mean"`
+#'   or `"quantile"` the unit is severity; for `"survival"` or `"cdf"`
+#'   values are probabilities. For `"density"` values are densities.
+#' @examples
+#' set.seed(1)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", hessian = FALSE)
+#' predict(fit, type = "mean")
+#' predict(fit, type = "quantile", p = 0.95)
+#' predict(fit, type = "survival", x = 25000)
 #' @export
 predict.actuarialfitdist_fit <- function(object, newdata = NULL, scale_value = NULL,
                                          type = c("mean", "quantile", "survival", "cdf", "density"),

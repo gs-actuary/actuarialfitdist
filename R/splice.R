@@ -110,12 +110,21 @@
 #'   supplied, two probabilities defining the range of empirical loss
 #'   quantiles searched. Defaults to 0.65 through 0.95.
 #' @param threshold_grid Number of candidate thresholds used in search mode.
+#' @param min_tail_exact Minimum uncensored observations strictly above a threshold.
+#'   Candidates failing this condition are skipped and described in `threshold_search`.
 #' @param fixed Optional list. Use `body = list(...)`, `tail = list(...)`, and
 #'   optionally `splice_prob = ...` to fix parameters.
 #' @return An `actuarialfitdist_fit` object. Search fits also contain a
 #'   `threshold_search` data frame.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_spliced_severity(d, "loss", body = "lognormal", tail = "pareto2",
+#'   threshold = as.numeric(stats::quantile(d$loss, 0.75)), hessian = FALSE,
+#'   min_tail_exact = 5)
+#' fit$threshold
 #' @export
-fit_spliced_severity <- function(data, loss, deductible, limit,
+fit_spliced_severity <- function(data, loss, deductible = NULL, limit = NULL,
                                  body = "lognormal", tail = "pareto2",
                                  threshold = NULL,
                                  threshold_method = c("fixed", "search"),
@@ -123,18 +132,18 @@ fit_spliced_severity <- function(data, loss, deductible, limit,
                                  threshold_grid = 15L,
                                  scale_by = NULL, scale_intercept = FALSE,
                                  weights = NULL, fixed = list(), control = list(),
-                                 hessian = TRUE) {
+                                 hessian = TRUE, invalid_rows = c("warn_drop", "error"),
+                                 min_tail_exact = 25L) {
   threshold_method <- match.arg(threshold_method)
-  if (!is.data.frame(data)) .afd_stop("`data` must be a data frame.")
-  loss_col <- .afd_match_col(data, loss, "loss")
-  ded_col <- .afd_match_col(data, deductible, "deductible")
-  lim_col <- .afd_match_col(data, limit, "limit")
-  scale_col <- .afd_match_col(data, scale_by, "scale_by", required = FALSE)
-  weight_col <- .afd_match_col(data, weights, "weights", required = FALSE)
+  prep <- .afd_prepare(data, loss, deductible, limit, weights, scale_by, invalid_rows)
+  data <- prep$data; cols <- prep$cols
+  loss_col <- cols$loss; ded_col <- cols$deductible; lim_col <- cols$limit
+  scale_col <- cols$scale_by; weight_col <- cols$weights
   x <- data[[loss_col]]; d <- data[[ded_col]]; u <- data[[lim_col]]
   w <- if (is.null(weight_col)) rep(1, nrow(data)) else data[[weight_col]]
   z <- if (is.null(scale_col)) NULL else data[[scale_col]]
-  .afd_validate_ground_up(x, d, u, w, z)
+  if (length(min_tail_exact) != 1L || !is.finite(min_tail_exact) || min_tail_exact < 5)
+    .afd_stop("`min_tail_exact` must be at least 5.")
   body <- .afd_normalize_distribution(body); tail <- .afd_normalize_distribution(tail)
 
   if (threshold_method == "fixed") {
@@ -154,28 +163,60 @@ fit_spliced_severity <- function(data, loss, deductible, limit,
     }
   }
 
-  results <- lapply(candidates, function(th) {
-    tryCatch(
-      .afd_fit_splice_at_threshold(data, x, d, u, w, z, body, tail, th,
-                                   scale_intercept, fixed, control, hessian = FALSE),
-      error = function(e) e
-    )
+  candidates <- sort(unique(candidates[is.finite(candidates) & candidates > 0]))
+  if (!length(candidates)) .afd_stop("No positive finite splice thresholds were supplied.")
+  exact_above <- vapply(candidates, function(th) sum(x > th &
+    !(is.finite(u) & x >= u) & w > 0), integer(1))
+  body_rows <- vapply(candidates, function(th) sum(x <= th & w > 0), integer(1))
+  reason <- rep(NA_character_, length(candidates))
+  reason[exact_above < min_tail_exact] <- "insufficient uncensored tail observations"
+  reason[body_rows < 5L] <- "insufficient body observations"
+  results <- lapply(seq_along(candidates), function(i) {
+    if (!is.na(reason[i])) return(NULL)
+    ans <- tryCatch(.afd_fit_splice_at_threshold(data, x, d, u, w, z,
+      body, tail, candidates[i], scale_intercept, fixed, control, hessian = FALSE),
+      error = function(e) e)
+    if (inherits(ans, "error")) reason[i] <<- conditionMessage(ans)
+    else if (ans$convergence != 0L) reason[i] <<- paste0("optimizer code ", ans$convergence)
+    ans
   })
-  score <- vapply(results, function(r) if (is.list(r) && !inherits(r, "error")) r$AIC else Inf, numeric(1))
+  valid <- vapply(results, function(r) is.list(r) &&
+                  !inherits(r, "error") && !is.null(r$AIC) &&
+                  is.finite(r$AIC) && r$convergence == 0L, logical(1))
+  score <- vapply(seq_along(results), function(i)
+                  if (valid[i]) results[[i]]$AIC else Inf, numeric(1))
   if (all(!is.finite(score))) {
-    errs <- vapply(results, function(r) if (inherits(r, "error")) conditionMessage(r) else "invalid fit", character(1))
-    .afd_stop("No splice threshold produced a valid fit. First errors: ", paste(utils::head(unique(errs), 3), collapse = " | "))
+    .afd_stop("No eligible converged splice threshold. ",
+      paste(utils::head(unique(stats::na.omit(reason)), 4L), collapse = " | "),
+      ". Lower `threshold_probs` or `min_tail_exact`, or inspect censoring limits.")
   }
+  tail_flags <- vapply(seq_along(results), function(i) {
+    if (!valid[i]) return(NA_character_)
+    cf <- results[[i]]$coefficients
+    get_par <- function(nm) if (nm %in% names(cf)) unname(cf[nm]) else NA_real_
+    ts <- get_par("tail_scale")
+    tshape <- c(get_par("tail_shape"), get_par("tail_shape1"),
+                get_par("tail_shape2"))
+    if ((is.finite(ts) && ts > 100 * candidates[i]) &&
+        any(tshape[is.finite(tshape)] > 100))
+      return("Extreme tail scale and shape: possible weak identifiability")
+    if (any(tshape[is.finite(tshape)] > 1000))
+      return("Extreme tail shape: inspect extrapolation")
+    NA_character_
+  }, character(1))
   best_i <- which.min(score)
+  if (!is.na(tail_flags[best_i])) .afd_warn("Spliced-fit diagnostic: ", tail_flags[best_i])
   best <- .afd_fit_splice_at_threshold(data, x, d, u, w, z, body, tail,
                                        candidates[best_i], scale_intercept, fixed,
                                        control, hessian)
   search_df <- data.frame(
     threshold = candidates,
-    logLik = vapply(results, function(r) if (is.list(r) && !inherits(r, "error")) r$logLik else NA_real_, numeric(1)),
-    AIC = vapply(results, function(r) if (is.list(r) && !inherits(r, "error")) r$AIC else NA_real_, numeric(1)),
-    BIC = vapply(results, function(r) if (is.list(r) && !inherits(r, "error")) r$BIC else NA_real_, numeric(1)),
-    converged = vapply(results, function(r) is.list(r) && !inherits(r, "error") && r$convergence == 0L, logical(1)),
+    n_body = body_rows, n_exact_tail = exact_above,
+    n_censored = vapply(candidates, function(th) sum(is.finite(u) & x >= u & u > th & w > 0), integer(1)),
+    logLik = vapply(seq_along(results), function(i) if (valid[i]) results[[i]]$logLik else NA_real_, numeric(1)),
+    AIC = vapply(seq_along(results), function(i) if (valid[i]) results[[i]]$AIC else NA_real_, numeric(1)),
+    BIC = vapply(seq_along(results), function(i) if (valid[i]) results[[i]]$BIC else NA_real_, numeric(1)),
+    converged = valid, reason = reason, tail_warning = tail_flags,
     stringsAsFactors = FALSE
   )
   n_eff <- .afd_n_eff(w)
@@ -192,7 +233,8 @@ fit_spliced_severity <- function(data, loss, deductible, limit,
     columns = list(loss = loss_col, deductible = ded_col, limit = lim_col,
                    scale_by = scale_col, weights = weight_col),
     scale_intercept = isTRUE(scale_intercept), n = nrow(data), n_eff = n_eff,
-    weights = w,
+    weights = w, excluded_rows = prep$excluded_rows,
+    excluded_details = prep$excluded_details, retained_rows = prep$retained_rows,
     notes = "Spliced densities are normalized on each side of the selected threshold; density continuity at the threshold is not imposed."
   ))
   class(out) <- "actuarialfitdist_fit"

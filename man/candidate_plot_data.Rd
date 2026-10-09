@@ -1,9 +1,9 @@
-\name{fit_plot_data}
-\alias{fit_plot_data}
-\title{Data underlying observed-versus-modeled severity plots}
-\description{Simulate the observed deductible-truncated and limit-censored portfolio under a fitted model, returning plotting data.}
+\name{candidate_plot_data}
+\alias{candidate_plot_data}
+\title{Data for comparing several candidate severity distributions}
+\description{Return the underlying long observed-versus-simulated data for every successful candidate fit.}
 \usage{
-fit_plot_data(object, scale_range = NULL, nsim = 20, seed = NULL)
+candidate_plot_data(object, scale_range = NULL, nsim = 3, seed = NULL)
 }
 \arguments{
 \item{object}{Fitted severity model or candidate-fits object as appropriate.}
@@ -16,7 +16,8 @@ fit_plot_data(object, scale_range = NULL, nsim = 20, seed = NULL)
 \examples{
 set.seed(123)
 d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
-fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
-head(fit_plot_data(fit, nsim = 1, seed = 1))
+candidates <- fit_severity_candidates(d, "loss",
+  distributions = c("lognormal", "gamma"), hessian = FALSE)
+head(candidate_plot_data(candidates, nsim = 1))
 
 }

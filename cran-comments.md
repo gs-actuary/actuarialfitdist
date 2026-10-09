@@ -1,9 +1,7 @@
-## R CMD check
+## Release status
 
-This package was assembled in an environment without an R runtime. Before CRAN submission, run:
+Version 0.2.0 is a development draft, **not submitted to CRAN**.
+R CMD check and platform checks have not been executed in the file-generation
+environment; run them locally before submission.
 
-* `R CMD build actuarialfitdist`
-* `R CMD check --as-cran actuarialfitdist_0.1.0.tar.gz`
-* tests on Windows, macOS, and Linux
-
-No non-ASCII source characters are intentionally used.
+See CRAN_READINESS.md for reproducible commands and statistical caveats.

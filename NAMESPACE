@@ -59,3 +59,6 @@ importFrom(stats,rweibull)
 importFrom(stats,simulate)
 importFrom(stats,uniroot)
 importFrom(stats,vcov)
+
+export(candidate_plot_data)
+export(plot_candidate_fits)

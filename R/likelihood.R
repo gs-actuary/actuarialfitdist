@@ -23,7 +23,7 @@
 .afd_single_loglik <- function(dist, params, x, deductible, limit, weights, scale_by = NULL) {
   z <- .afd_single_components(dist, params, x, deductible, limit, scale_by)
   if (is.null(z) || any(!is.finite(z$loglik[weights > 0]))) return(-Inf)
-  sum(weights * z$loglik)
+  sum(weights[weights > 0] * z$loglik[weights > 0])
 }
 
 .afd_positive_cdf <- function(dist, x, s, p) {
@@ -171,5 +171,5 @@
   if (!is.finite(params$splice_prob) || params$splice_prob <= 0 || params$splice_prob >= 1) return(-Inf)
   z <- .afd_splice_components(body, tail, threshold, params, x, deductible, limit, scale_by)
   if (any(!is.finite(z$loglik[weights > 0]))) return(-Inf)
-  sum(weights * z$loglik)
+  sum(weights[weights > 0] * z$loglik[weights > 0])
 }

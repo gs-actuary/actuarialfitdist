@@ -1,43 +1,55 @@
-# CRAN readiness notes
+# CRAN-readiness review for 0.2.0 source
 
-The package was assembled with CRAN-oriented structure, documentation, tests, a vignette, and CI configuration.
+## Documentation correction (post-check)
 
-## Completed static checks
+The user reported 77 passing tests and an R CMD check with 0 errors,
+2 warnings and 1 note. All three messages concerned documentation.
+This archive fixes the roxygen2 source blocks and bundled Rd help files;
+it still **requires a fresh `devtools::document()` and `devtools::check()`**
+to verify that the generated documentation is warning- and note-free.
 
-- All NAMESPACE exports have matching R function definitions.
-- All registered S3 methods have matching definitions.
-- All exported functions have an Rd alias.
-- Internal `.afd_*` references resolve to definitions in `R/`.
-- Package source, documentation, tests, examples, and vignette contain ASCII-only text.
-- The ground-up-loss assumption is repeated in README, package help, fitter help, vignette, and validation errors.
-- Optional real-world example dependencies are in Suggests rather than Imports.
-- ggplot2 is the only non-base runtime dependency.
 
-## Required before CRAN submission
+This ZIP is an editable source-tree snapshot, not a CRAN-checked binary or
+`R CMD build` output. The author should run the checks below in R 4.1+ with
+current dependencies installed. This environment has no R interpreter, so we
+**cannot** claim that `R CMD check --as-cran` passes, that roxygen-generated
+Rd files have been validated, or that timing regressions meet their targets.
 
-This build environment did not contain R, so a live package build/check could not be run here. On a machine with R installed, run:
+## On the author's R machine
 
 ```r
+# install.packages(c("devtools", "roxygen2", "testthat", "scales", "knitr", "rmarkdown"))
+# Run in the folder containing DESCRIPTION:
 devtools::document()
 devtools::test()
-devtools::check()
+devtools::check(document = FALSE, args = "--as-cran")
+# Optional platform coverage: rhub::rhub_check() or CI on Windows/Linux/macOS.
 ```
 
-Then from a terminal run the CRAN-style source check:
-
-```text
+```sh
 R CMD build actuarialfitdist
-R CMD check --as-cran actuarialfitdist_0.1.0.tar.gz
+R CMD check --as-cran actuarialfitdist_0.2.0.tar.gz
 ```
 
-Review any roxygen-generated NAMESPACE/Rd changes rather than accepting them blindly, because the checked-in documentation and namespace were generated explicitly for this package draft.
+Do not submit until errors and warnings are resolved. Review any NOTES,
+especially examples/vignette runtime, Rd examples, non-ASCII, or method
+signatures. Regression testing includes exact formula checks for expected
+payments and spliced search behavior. The local machine should repeat the
+100 x 100 factor grid timing benchmark against the original version.
 
-The included GitHub Actions workflow runs R CMD check on Windows, macOS, Linux release, Linux devel, and Linux oldrel-1.
+## Statistical review before release
 
-## Documentation regeneration
-
-This source tree uses roxygen comments as the single source of truth for help files.
-Before checking a copied-over development tree, delete any pre-existing `man/`
-directory left from an older build, then run `devtools::document()`. This prevents
-stale hand-written Rd files from coexisting with newly generated per-function Rd
-files and producing duplicate-name/duplicate-alias warnings.
+* `loss` is a **ground-up** severity and not net payment/ACV. Fitting `limit`
+  is a **ground-up censoring threshold**. Factor-generation `limit` is a
+  **payment cap after deductible**. Avoid conflating them.
+* Above-limit rows are excluded by default (not silently treated as censored).
+  Out-of-contract payments require analyst assessment. Censored-at-limit
+  observations remain in the likelihood as right-censored data.
+* Search thresholds are empirical quantiles of observed/censored losses.
+  Pileups at limits yield duplicate thresholds. Min exact-tail count defaults
+  to 25; flagged extreme tail scales/shapes still require actuarial judgment.
+* Performance optimization uses analytic LEV for four families; all other
+  families/splices use numerical quadrature and may remain slower on large
+  Cartesian grids. This is a remaining optimization opportunity.
+* Automatic exclusion changes sample composition. Audit original positions
+  and reasons before accepting a model in production.

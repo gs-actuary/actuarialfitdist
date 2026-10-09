@@ -122,3 +122,65 @@
 .afd_param_count <- function(fit) length(fit$optim_par)
 
 .afd_n_eff <- function(weights) sum(weights)
+
+# Prepare one consistent observation model. Original positional row indices are
+# returned for audit. Optional policy terms use internal columns, never asking
+# the analyst to manufacture zero or infinity fields.
+.afd_prepare <- function(data, loss, deductible = NULL, limit = NULL,
+                         weights = NULL, scale_by = NULL,
+                         invalid_rows = c("warn_drop", "error")) {
+  invalid_rows <- match.arg(invalid_rows)
+  if (!is.data.frame(data)) .afd_stop("`data` must be a data frame.")
+  lc <- .afd_match_col(data, loss, "loss")
+  dc <- .afd_match_col(data, deductible, "deductible", required = FALSE)
+  uc <- .afd_match_col(data, limit, "limit", required = FALSE)
+  wc <- .afd_match_col(data, weights, "weights", required = FALSE)
+  sc <- .afd_match_col(data, scale_by, "scale_by", required = FALSE)
+  unique_col <- function(prefix) {
+    ans <- prefix
+    while (ans %in% names(data)) ans <- paste0(ans, "_")
+    ans
+  }
+  if (is.null(dc)) { dc <- unique_col(".afd_deductible"); data[[dc]] <- 0 }
+  if (is.null(uc)) { uc <- unique_col(".afd_limit"); data[[uc]] <- Inf }
+  x <- data[[lc]]; d <- data[[dc]]; u <- data[[uc]]
+  w <- if (is.null(wc)) rep(1, nrow(data)) else data[[wc]]
+  z <- if (is.null(sc)) NULL else data[[sc]]
+  fields <- list(loss = x, deductible = d, limit = u, weights = w, scale_by = z)
+  for (nm in names(fields)) {
+    v <- fields[[nm]]
+    if (!is.null(v) && !is.numeric(v)) .afd_stop("`", nm, "` column must be numeric.")
+  }
+  n <- nrow(data)
+  reason <- rep("", n)
+  add <- function(mask, description) {
+    mask[is.na(mask)] <- TRUE
+    reason[mask] <<- ifelse(nzchar(reason[mask]),
+                            paste(reason[mask], description, sep = "; "), description)
+  }
+  add(!is.finite(x) | x <= 0, "loss not finite/positive")
+  add(!is.finite(d) | d < 0, "invalid deductible")
+  add(is.na(u) | u <= 0, "invalid limit")
+  add(d >= u, "limit not above deductible")
+  add(x <= d, "loss at/below deductible")
+  add(is.finite(u) & x > u, "loss above censoring limit")
+  add(!is.finite(w) | w < 0, "invalid weight")
+  if (!is.null(z)) add(!is.finite(z), "invalid scaling value")
+  excluded <- which(nzchar(reason))
+  if (length(excluded)) {
+    detail <- paste0(length(excluded), " anomalous row(s) excluded; original positions: ",
+                     paste(utils::head(excluded, 12L), collapse = ", "),
+                     if (length(excluded) > 12L) ", ..." else "", ".")
+    if (invalid_rows == "error") .afd_stop(detail, " First reason: ", reason[excluded[1L]])
+    .afd_warn(detail, " See `$excluded_rows` and `$excluded_details`.")
+  }
+  retained <- which(!nzchar(reason))
+  if (length(retained) < 5L) .afd_stop("Fewer than five valid claims remain after screening.")
+  if (!any(w[retained] > 0)) .afd_stop("At least one positive likelihood weight is required.")
+  clean <- data[retained, , drop = FALSE]
+  rownames(clean) <- NULL
+  details <- data.frame(row = excluded, reason = reason[excluded], stringsAsFactors = FALSE)
+  list(data = clean, cols = list(loss = lc, deductible = dc, limit = uc,
+       weights = wc, scale_by = sc), excluded_rows = excluded,
+       excluded_details = details, retained_rows = retained)
+}

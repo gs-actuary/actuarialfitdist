@@ -1,0 +1,104 @@
+---
+title: "Fitting and Comparing Severity Candidates"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Fitting and Comparing Severity Candidates}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(actuarialfitdist)
+```
+
+# Workflow and data interpretation
+
+`fit_severity_candidates()` fits competing parametric ground-up severity
+families and returns a list with `fits`, a `comparison` data frame, and
+`excluded_rows` / `excluded_details`. The observations **must be ground-up**;
+net paid losses should not be substituted without reconstructing that basis.
+A finite policy censoring limit means values at the limit are right-censored;
+no limit or deductible column is needed if it does not apply.
+
+```{r simulated-data}
+set.seed(128)
+n <- 750
+latent <- rlnorm(n, log(14000), 1.0)
+limits <- sample(c(20000, 50000, 100000, Inf), n, replace = TRUE)
+dat <- data.frame(ground_up_loss = pmin(latent, limits),
+                  censor_limit = limits)
+```
+
+# Fit, compare, and extract a selected fit
+
+```{r candidate-fit}
+candidates <- fit_severity_candidates(dat, loss = "ground_up_loss",
+  limit = "censor_limit", distributions = c("lognormal", "gamma", "weibull"),
+  hessian = FALSE)
+print(candidates$comparison)
+candidates$comparison[order(candidates$comparison$AIC), ]
+fit_lognormal <- candidates$fits$lognormal
+summary(fit_lognormal)
+```
+
+Lower AIC/BIC is better **relative to other fits on the same observation model**.
+A higher log likelihood is better. These are not absolute goodness-of-fit
+measures and can hide tail or layer errors. Not every distribution should be
+forced onto every loss dataset; inspect convergence and factor stability.
+
+# Visual comparison
+
+Simulated portfolio claims reproduce row-level censoring limits and deductibles.
+Thus the histogram comparisons are made on the **observed** basis. The default
+horizontal axis is logarithmic, and specifying `xlim` changes only the displayed
+range. Use `scale_range = c(lower, upper)` when fitting with `scale_by`.
+
+```{r candidate-plots, fig.width=8, fig.height=5}
+plot_candidate_fits(candidates, type = "histogram", nsim = 2, seed = 22,
+  x_scale = "log10", xlim = c(500, 200000))
+```
+
+```{r candidate-data}
+head(candidate_plot_data(candidates, nsim = 1, seed = 22))
+```
+
+# Convert fits to rating factors and assess sensitivity
+
+`limit` in `severity_factors()` is a **payment limit after the deductible**:
+`E[min(max(v*X-d,0),L)]`. This is distinct from the ground-up censoring limit
+used for fitting. In particular, with `valuation_factor = 1`, finite payment
+limits require integrated survival between `d` and `d + L`.
+
+```{r candidate-factors}
+factors <- severity_factors(candidates, deductible = c(500, 1000),
+  limit = c(25000, 50000, Inf), base_deductible = 500, base_limit = 25000)
+head(factors)
+compare_factors(candidates, metric = "rating_factor",
+  deductible = c(500, 1000), limit = c(25000, 50000),
+  base_deductible = 500, base_limit = 25000)
+```
+
+By default, the grid is Cartesian. Use `grid = "paired"` to match vectors
+positionally, allowing scalar recycling. This prevents unexpectedly generating
+10,000 scenarios from two vectors of length 100.
+
+# Excluded claims
+
+Rows with below-deductible or above-censor-limit losses are excluded by default
+with a warning. The original positions and reasons are retained. This behavior
+is not a claim that these payments were necessarily erroneous: extra-contractual
+payments, bad-faith settlements, and mismatched ground-up definitions require
+specific analyst investigation, not silent censoring.
+
+```{r anomaly-audit}
+bad <- dat
+bad$ground_up_loss[2] <- bad$censor_limit[2] + 1000
+# Use a guaranteed finite limit in the example.
+bad$censor_limit[2] <- 10000
+bad$ground_up_loss[2] <- 10500
+fit <- suppressWarnings(fit_severity(bad, loss = "ground_up_loss",
+  limit = "censor_limit", distribution = "lognormal", hessian = FALSE))
+fit$excluded_rows
+fit$excluded_details
+```

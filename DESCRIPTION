@@ -1,7 +1,7 @@
 Package: actuarialfitdist
 Type: Package
 Title: Actuarial Severity Distribution Fitting for Limits and Deductibles
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: person("Greg", "Sollenberger", email = "yagreg7@yahoo.com", role = c("aut", "cre", "cph"))
 Description: Fits actuarial claim severity distributions to ground-up loss data while
     accounting for deductible truncation, policy-limit censoring, observation weights,
@@ -20,6 +20,7 @@ Encoding: UTF-8
 Depends: R (>= 4.1.0)
 Imports:
     ggplot2,
+    scales,
     stats,
     utils
 Suggests:

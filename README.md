@@ -10,6 +10,56 @@ The package is deliberately opinionated about one important data assumption:
 
 This is not a hidden implementation detail. It determines the likelihood. Deductibles are treated as left-truncation thresholds: claims below them are assumed absent from the fitted sample. Finite limits are treated as right-censoring thresholds: a claim recorded at the limit is known only to have reached or exceeded that threshold.
 
+## Quick start: three common workflows
+
+The fitters require **ground-up claim severity**, not net insurer payment.
+Policy terms are optional: absent `deductible` means zero truncation and absent
+`limit` means no censoring. A column such as Coverage A is a **scaling variable**,
+not automatically a ground-up censoring limit. With finite ground-up limits,
+observations exactly at the limit are treated as right-censored.
+
+```r
+library(actuarialfitdist)
+set.seed(104)
+claims <- data.frame(loss = rlnorm(400, log(15000), 0.9))
+
+# 1. Single-family fit, no deductible or censoring limit
+f <- fit_severity(claims, loss = "loss", distribution = "lognormal")
+summary(f)
+plot_fit(f, x_scale = "log10", xlim = c(500, 200000), nsim = 2)
+
+# 2. Candidate comparison: inspect the fit objects AND the comparison table
+candidates <- fit_severity_candidates(claims, loss = "loss",
+  distributions = c("lognormal", "gamma", "weibull"), hessian = FALSE)
+candidates$comparison[order(candidates$comparison$AIC), ]
+plot_candidate_fits(candidates, type = "histogram", nsim = 2)
+head(candidate_plot_data(candidates, nsim = 1, seed = 33))
+
+# 3. Translate fits to deductible/payment-limit factors
+severity_factors(candidates, deductible = c(500, 1000),
+  limit = c(25000, 50000), base_deductible = 500,
+  base_limit = 25000)
+
+# When inputs describe matched scenarios, avoid a Cartesian product:
+severity_factors(f, deductible = c(500, 1000),
+  limit = c(25000, 50000), grid = "paired")
+```
+
+**Anomalies:** by default the fitter warns and excludes rows with invalid claim
+information (e.g., ground-up loss at/below deductible or above a finite censoring
+limit). Inspect `fit$excluded_rows` (original positional row numbers) and
+`fit$excluded_details` (reasons). Use `invalid_rows = "error"` to stop instead.
+For candidate fits the audit is on both the collection and each successful fit.
+
+**Splices:** empirical observed-loss percentiles can be tied at a policy limit.
+The threshold-search table contains body counts, uncensored tail counts,
+convergence, and rejection reasons. Consider the coverage structure before
+lowering `min_tail_exact`; convergence does not establish tail stability.
+
+**Next steps:** consult `vignette("actuarialfitdist")` and
+`vignette("candidate-comparisons")`, then `?fit_severity_candidates`,
+`?plot_candidate_fits` and `?severity_factors` for runnable examples.
+
 ## Main features
 
 * Maximum-likelihood severity fitting with deductible truncation and limit censoring.
@@ -23,7 +73,7 @@ This is not a hidden implementation detail. It determines the likelihood. Deduct
 * Simulation-based goodness-of-fit diagnostics that reproduce the actual deductible, limit, and scaling structure.
 * Diagnostics of the assumed severity scaling relationship and of fit within selected loss layers.
 * Numerical Hessian covariance estimates and basic case/parametric bootstrap support.
-* `ggplot2` graphics plus public data-building functions for fully customized charts and Plotly workflows.
+* `ggplot2` and `scales` graphics plus public data-building functions for fully customized charts and Plotly workflows.
 
 ## Ground-up observation model
 

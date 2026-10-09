@@ -25,5 +25,5 @@ NULL
 # undefined R globals.
 utils::globalVariables(c(
   "observed_loss", "density", "weight", "source", "simulation",
-  "x", "y", "scale_value", "mean", "series"
+  "x", "y", "scale_value", "mean", "series", "distribution"
 ))

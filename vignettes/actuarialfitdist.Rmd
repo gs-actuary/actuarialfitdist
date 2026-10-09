@@ -36,7 +36,7 @@ If a row has likelihood weight `w`, its log-likelihood contribution is `w` times
 Suppose an insurer is analyzing property-damage severity. There is no deductible in this example, but policies have different limits. A claim that reaches its policy limit is recorded at the limit and is right-censored.
 
 ```{r auto-limit-data}
-n <- 5000
+n <- 1200
 true_loss <- rlnorm(n, meanlog = log(9000), sdlog = 0.95)
 policy_limit <- sample(c(10000, 25000, 50000, 100000), n, replace = TRUE,
                        prob = c(0.15, 0.35, 0.35, 0.15))
@@ -56,7 +56,6 @@ Fit several plausible severity families:
 pd_candidates <- fit_severity_candidates(
   pd,
   loss = "loss",
-  deductible = "deductible",
   limit = "limit",
   distributions = c("lognormal", "weibull", "gamma", "burr", "loglogistic")
 )
@@ -96,7 +95,7 @@ compare_factors(
 Now consider collision severity with varying deductibles and no finite policy limit. Ground-up losses below the deductible never appear in the claim sample.
 
 ```{r collision-data}
-n <- 7000
+n <- 1500
 collision_ground_up <- rgamma(n, shape = 2.2, scale = 3200)
 collision_ded <- sample(c(250, 500, 1000, 2000), n, replace = TRUE,
                         prob = c(0.10, 0.35, 0.40, 0.15))
@@ -142,7 +141,7 @@ For homeowners, claim severity can vary systematically with the insured amount. 
 Here Coverage A is the scaling variable. The same mechanism could instead use TIV, vehicle value, or a user-created transformation in another line of business.
 
 ```{r homeowners-data}
-n <- 10000
+n <- 1600
 coverage_a <- sample(seq(150000, 900000, by = 25000), n, replace = TRUE)
 home_ded <- sample(c(1000, 2500, 5000, 10000), n, replace = TRUE)
 shape <- 1.35
@@ -202,7 +201,7 @@ plot_fit(
   home_fit,
   type = "density",
   scale_range = c(300000, 450000),
-  nsim = 10,
+  nsim = 3,
   seed = 11
 )
 ```
@@ -210,7 +209,7 @@ plot_fit(
 A separate scaling diagnostic asks whether the assumed relationship across Coverage A is reasonable.
 
 ```{r homeowners-scale-plot, fig.width=7, fig.height=4}
-plot_scaling_fit(home_fit, bins = 10, nsim = 20, seed = 12)
+plot_scaling_fit(home_fit, bins = 10, nsim = 3, seed = 12)
 ```
 
 The actual and modeled observed means are directly comparable because the modeled series reproduces each claim row's deductible and censoring structure. The fitted ground-up mean series is also shown to make the underlying severity-scaling relationship visible.
@@ -224,7 +223,7 @@ The two densities are normalized on their respective sides of the threshold. A b
 The threshold may be fixed by the analyst or searched over candidate values.
 
 ```{r splice-data}
-n <- 7000
+n <- 1500
 threshold_true <- 30000
 is_body <- runif(n) < 0.90
 
@@ -263,7 +262,7 @@ splice_fit <- fit_spliced_severity(
   tail = "pareto2",
   threshold_method = "search",
   threshold_probs = c(0.60, 0.95),
-  threshold_grid = 12
+  threshold_grid = 4
 )
 
 splice_fit
@@ -340,7 +339,7 @@ confint(collision_fit)
 A lightweight parametric or case bootstrap is also available. Parametric bootstrap retains the fitted portfolio's deductible, limit, scaling, and weight structure.
 
 ```{r bootstrap, eval=FALSE}
-boot <- bootstrap_fit(collision_fit, R = 200, type = "parametric", seed = 99)
+boot <- bootstrap_fit(collision_fit, R = 5, type = "parametric", seed = 99)
 head(boot$estimates)
 boot$success_rate
 ```
@@ -352,8 +351,48 @@ For a searched spliced fit, `refit_threshold = FALSE` reuses the selected thresh
 The plot-building data are part of the public interface:
 
 ```{r custom-data}
-d <- fit_plot_data(home_fit, scale_range = c(300000, 450000), nsim = 10, seed = 5)
+d <- fit_plot_data(home_fit, scale_range = c(300000, 450000), nsim = 3, seed = 5)
 head(d)
 ```
 
 This allows analysts to use their own graphics conventions without reproducing the statistically important observation logic. See `inst/examples/08_plotly_diagnostics.R` for Plotly examples.
+
+# Optional terms, anomaly audits, and log-scale plots
+
+The policy terms are optional. A sample with no deductible or censoring limit
+can be fitted by naming only the loss column and family. In particular,
+Coverage A is not a policy censoring limit merely because it is an insured value.
+
+```{r new-api, fig.width=7, fig.height=4}
+set.seed(20261008)
+no_terms <- data.frame(loss = rlnorm(250, log(12000), .8))
+fit_no_terms <- fit_severity(no_terms, loss = "loss",
+  distribution = "lognormal", hessian = FALSE)
+print(fit_no_terms)
+plot_fit(fit_no_terms, x_scale = "log10", nsim = 2, seed = 11,
+  xlim = c(1000, 100000))
+```
+
+If a supplied row is inconsistent with the observation mechanism, the default
+is to exclude the row after warning; the original positional row number is
+reported. This is an audit aid, not a substitute for understanding how the
+original ground-up amounts were collected.
+
+```{r excluded-rows}
+problem <- no_terms
+problem$deductible <- 0
+problem$deductible[3] <- problem$loss[3] + 10
+clean_fit <- suppressWarnings(fit_severity(problem, loss = "loss",
+  deductible = "deductible", distribution = "lognormal", hessian = FALSE))
+clean_fit$excluded_rows
+clean_fit$excluded_details
+```
+
+For single-fit plots and multi-candidate plots, use `x_scale = "log10"` by
+default; `xlim` zooms without discarding data during statistic calculation.
+The histogram density is computed in log-severity coordinates when log-scaled.
+
+```{r candidate-comparison-plot, fig.width=8, fig.height=4}
+plot_candidate_fits(pd_candidates, type = "density", nsim = 2, seed = 11,
+  x_scale = "log10", xlim = c(200, 150000))
+```

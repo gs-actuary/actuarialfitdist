@@ -23,6 +23,11 @@
 #' @param nsim Number of simulated observed portfolios.
 #' @param seed Optional random seed.
 #' @return Long data frame with actual and simulated observed severities.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
+#' head(fit_plot_data(fit, nsim = 1, seed = 1))
 #' @export
 fit_plot_data <- function(object, scale_range = NULL, nsim = 20, seed = NULL) {
   if (!inherits(object, "actuarialfitdist_fit")) .afd_stop("`object` must be a fitted actuarialfitdist model.")
@@ -61,43 +66,188 @@ fit_plot_data <- function(object, scale_range = NULL, nsim = 20, seed = NULL) {
   do.call(rbind, pieces)
 }
 
+# Shared x-axis styling helper (not a user-facing function).
+.afd_plot_x <- function(p, x_scale, xlim) {
+  x_scale <- match.arg(x_scale, c("log10", "linear"))
+  if (x_scale == "log10") {
+    p <- p + ggplot2::scale_x_log10(
+      breaks = scales::breaks_log(n = 7),
+      labels = scales::label_number(big.mark = ",", accuracy = 1))
+  } else {
+    p <- p + ggplot2::scale_x_continuous(
+      labels = scales::label_number(big.mark = ",", accuracy = 1))
+  }
+  if (!is.null(xlim)) {
+    if (length(xlim) != 2L || any(!is.finite(xlim)) || xlim[1] >= xlim[2] ||
+        (x_scale == "log10" && xlim[1] <= 0))
+      .afd_stop("`xlim` must be two increasing finite values (positive for log10).")
+    p <- p + ggplot2::coord_cartesian(xlim = xlim)
+  }
+  p
+}
+
 #' Plot censoring-aware goodness of fit
 #'
-#' Plots actual observed claim severities against severities simulated from the
-#' fitted model after reproducing the same deductible, limit, and scaling
-#' structure. This avoids comparing truncated/censored data with an
-#' inappropriate unconditional ground-up density.
+#' The default log10 severity axis reveals the body of heavy-tailed claim
+#' distributions without discarding large losses. For histograms, ggplot
+#' computes density in log-severity coordinates, ensuring simulated and
+#' observed bars use the same normalization. Axis limits only zoom the view.
 #'
-#' @param object Fitted model.
-#' @param type One of `"histogram"`, `"density"`, `"cdf"`, or `"survival"`.
-#' @param scale_range Optional range of scaling values to inspect.
-#' @param nsim Number of simulated observed portfolios.
-#' @param seed Optional random seed.
-#' @param bins Histogram bin count.
-#' @return A `ggplot2` object. Use `fit_plot_data()` for the underlying data.
+#' @inheritParams fit_plot_data
+#' @param type `"histogram"`, `"density"`, `"cdf"`, or `"survival"`.
+#' @param bins Number of histogram bins.
+#' @param x_scale `"log10"` (default) or `"linear"`.
+#' @param xlim Optional visible x-axis range (without dropping observations).
+#' @return ggplot object.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
+#' plot_fit(fit, x_scale = "log10", nsim = 1, seed = 1)
 #' @export
 plot_fit <- function(object, type = c("histogram", "density", "cdf", "survival"),
-                     scale_range = NULL, nsim = 20, seed = NULL, bins = 30) {
-  type <- match.arg(type)
+                     scale_range = NULL, nsim = 20, seed = NULL, bins = 30,
+                     x_scale = c("log10", "linear"), xlim = NULL) {
+  type <- match.arg(type); x_scale <- match.arg(x_scale)
   dat <- fit_plot_data(object, scale_range, nsim, seed)
+  if (x_scale == "log10" && any(dat$observed_loss <= 0))
+    .afd_stop("Log10 plots require positive observed severities; select `x_scale = 'linear'`.")
   if (type == "histogram") {
-    return(ggplot2::ggplot(dat, ggplot2::aes(x = observed_loss, y = ggplot2::after_stat(density), weight = weight, fill = source)) +
-      ggplot2::geom_histogram(position = "identity", alpha = 0.35, bins = bins) +
-      ggplot2::labs(x = "Observed claim severity", y = "Density", fill = NULL,
-                    title = "Observed vs simulated observed severity") + ggplot2::theme_minimal())
+    p <- ggplot2::ggplot(dat, ggplot2::aes(x = observed_loss,
+       y = ggplot2::after_stat(density), weight = weight, fill = source,
+       group = source)) +
+       ggplot2::geom_histogram(position = "identity", alpha = 0.35, bins = bins) +
+       ggplot2::labs(x = "Observed claim severity", y = if (x_scale == "log10")
+         "Density per log10 severity" else "Density", fill = NULL,
+         title = "Observed vs simulated claim severity") + ggplot2::theme_minimal()
+  } else if (type == "density") {
+    p <- ggplot2::ggplot(dat, ggplot2::aes(x = observed_loss, weight = weight,
+      group = interaction(source, simulation), colour = source)) +
+      ggplot2::geom_density(alpha = .3) +
+      ggplot2::labs(x = "Observed claim severity", y = if (x_scale == "log10")
+        "Density per log10 severity" else "Density", colour = NULL,
+        title = "Observed vs simulated claim severity") + ggplot2::theme_minimal()
+  } else {
+    curve <- .afd_empirical_curve(dat, survival = type == "survival")
+    p <- ggplot2::ggplot(curve, ggplot2::aes(x = x, y = y,
+      group = interaction(source, simulation), colour = source)) +
+      ggplot2::geom_line(alpha = .45) +
+      ggplot2::labs(x = "Observed claim severity",
+        y = if (type == "survival") "Empirical survival" else "Empirical CDF",
+        colour = NULL, title = paste("Observed vs simulated", toupper(type))) +
+      ggplot2::theme_minimal()
   }
-  if (type == "density") {
-    return(ggplot2::ggplot(dat, ggplot2::aes(x = observed_loss, weight = weight, group = interaction(source, simulation), colour = source)) +
-      ggplot2::geom_density(alpha = 0.25) +
-      ggplot2::labs(x = "Observed claim severity", y = "Density", colour = NULL,
-                    title = "Observed vs simulated observed severity") + ggplot2::theme_minimal())
+  .afd_plot_x(p, x_scale, xlim)
+}
+
+#' Data for comparing several candidate severity distributions
+#'
+#' Recreates each candidate's row-level deductible truncation and limit
+#' censoring, then returns actual and simulated observed claim amounts with
+#' the same scale-range filter. Inspect or modify the data with ggplot2/plotly.
+#'
+#' @param object Output of `fit_severity_candidates()`.
+#' @param scale_range Optional range of `scale_by` values.
+#' @param nsim Number of observed-portfolio simulations per candidate.
+#' @param seed Optional reproducibility seed.
+#' @return Long-format data frame including a `distribution` column.
+#' @examples
+#' set.seed(11)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' candidates <- fit_severity_candidates(d, loss = "loss",
+#'   distributions = c("lognormal", "gamma"), hessian = FALSE)
+#' head(candidate_plot_data(candidates, nsim = 1, seed = 1))
+#' @export
+candidate_plot_data <- function(object, scale_range = NULL, nsim = 3, seed = NULL) {
+  if (!inherits(object, "actuarialfitdist_candidates"))
+    .afd_stop("`object` must be returned by `fit_severity_candidates()`. ")
+  good <- vapply(object$fits, function(f) inherits(f, "actuarialfitdist_fit") &&
+                    f$convergence == 0L, logical(1))
+  if (!any(good)) .afd_stop("No converged candidate fits to plot.")
+  if (!is.null(seed)) set.seed(seed)
+  dfs <- lapply(object$fits[good], function(f) {
+    dat <- fit_plot_data(f, scale_range = scale_range, nsim = nsim)
+    dat$distribution <- f$distribution
+    dat
+  })
+  out <- do.call(rbind, dfs)
+  rownames(out) <- NULL
+  out
+}
+
+#' Compare observed and fitted severity across candidate distributions
+#'
+#' Facets or overlays empirical and simulated observed severity histograms,
+#' densities, CDFs or survival curves. Uses a shared log10 axis by default.
+#' Fitted comparisons reproduce the observation mechanism, not unconditional
+#' ground-up densities. Returned ggplot can be customized.
+#'
+#' @param object Result of `fit_severity_candidates()`.
+#' @param type Plot type: `"histogram"`, `"density"`, `"cdf"`, or `"survival"`.
+#' @param scale_range Optional scale-by filter.
+#' @param nsim Observed-portfolio simulations per model.
+#' @param seed Random seed.
+#' @param bins Histogram bins.
+#' @param x_scale `"log10"` (default) or `"linear"`.
+#' @param xlim Optional visible x range.
+#' @param facet Logical; facet models (default) or overlay them.
+#' @return ggplot object.
+#' @examples
+#' set.seed(2)
+#' d <- data.frame(loss = rlnorm(150, log(9000), 0.9))
+#' fits <- fit_severity_candidates(d, "loss",
+#'   distributions = c("lognormal", "weibull"), hessian = FALSE)
+#' plot_candidate_fits(fits, nsim = 1, seed = 1)
+#' @export
+plot_candidate_fits <- function(object, type = c("histogram", "density", "cdf", "survival"),
+                                scale_range = NULL, nsim = 3, seed = NULL,
+                                bins = 40, x_scale = c("log10", "linear"),
+                                xlim = NULL, facet = TRUE) {
+  type <- match.arg(type); x_scale <- match.arg(x_scale)
+  dat <- candidate_plot_data(object, scale_range, nsim, seed)
+  if (x_scale == "log10" && any(dat$observed_loss <= 0))
+    .afd_stop("Log-scale plotting requires positive observed losses.")
+  if (!facet) {
+    actual <- dat[dat$source == "actual", , drop = FALSE]
+    actual <- actual[!duplicated(actual$row), , drop = FALSE]
+    modeled <- dat[dat$source == "simulated", , drop = FALSE]
+    dat <- rbind(actual, modeled)
+    dat$series <- ifelse(dat$source == "actual", "Observed", dat$distribution)
+  } else dat$series <- dat$source
+  if (type == "histogram") {
+    p <- ggplot2::ggplot(dat, ggplot2::aes(x = observed_loss,
+        y = ggplot2::after_stat(density), weight = weight, fill = series,
+        group = series)) + ggplot2::geom_histogram(bins = bins,
+        position = "identity", alpha = .25)
+  } else if (type == "density") {
+    p <- ggplot2::ggplot(dat, ggplot2::aes(x = observed_loss, weight = weight,
+        colour = series, group = interaction(series, simulation))) +
+        ggplot2::geom_density(alpha = .35)
+  } else {
+    if (!facet) {
+      # .afd_empirical_curve groups only by source/simulation; retain models.
+      curves <- do.call(rbind, lapply(split(dat, dat$series), function(a) {
+        cr <- .afd_empirical_curve(a, type == "survival")
+        cr$series <- a$series[1]
+        cr
+      }))
+    } else {
+      curves <- do.call(rbind, lapply(split(dat, dat$distribution), function(a) {
+        cr <- .afd_empirical_curve(a, type == "survival")
+        cr$distribution <- a$distribution[1]
+        cr$series <- cr$source
+        cr
+      }))
+    }
+    p <- ggplot2::ggplot(curves, ggplot2::aes(x = x, y = y, colour = series,
+      group = interaction(series, simulation))) + ggplot2::geom_line(alpha = .5)
   }
-  curve <- .afd_empirical_curve(dat, survival = type == "survival")
-  ggplot2::ggplot(curve, ggplot2::aes(x = x, y = y, group = interaction(source, simulation), colour = source)) +
-    ggplot2::geom_line(alpha = 0.45) +
-    ggplot2::labs(x = "Observed claim severity", y = if (type == "survival") "Empirical survival" else "Empirical CDF",
-                  colour = NULL, title = paste("Observed vs simulated", toupper(type))) +
-    ggplot2::theme_minimal()
+  if (facet) p <- p + ggplot2::facet_wrap(~distribution, scales = "fixed")
+  p <- p + ggplot2::labs(x = "Observed severity", y = if (type %in% c("density", "histogram"))
+    if (x_scale == "log10") "Density per log10 severity" else "Density" else type,
+    colour = NULL, fill = NULL,
+    title = "Candidate fits vs observed claims") + ggplot2::theme_minimal()
+  .afd_plot_x(p, x_scale, xlim)
 }
 
 #' Data underlying the scaling relationship diagnostic
@@ -116,6 +266,12 @@ plot_fit <- function(object, type = c("histogram", "density", "cdf", "survival")
 #' @param nsim Number of simulated portfolios.
 #' @param seed Optional random seed.
 #' @return Data frame with one row per scale bin.
+#' @examples
+#' set.seed(2)
+#' d <- data.frame(cov_a = rep(c(200000, 400000, 600000), each = 80))
+#' d$loss <- rlnorm(nrow(d), log(.07*d$cov_a), .8)
+#' f <- fit_severity(d, "loss", scale_by = "cov_a", hessian = FALSE)
+#' scaling_plot_data(f, bins = 3, nsim = 1)
 #' @export
 scaling_plot_data <- function(object, bins = 10, bin_method = c("quantile", "width"),
                               scale_range = NULL, nsim = 50, seed = NULL) {
@@ -169,6 +325,12 @@ scaling_plot_data <- function(object, bins = 10, bin_method = c("quantile", "wid
 #' @inheritParams scaling_plot_data
 #' @return A ggplot showing actual and modeled observed means by scale bin, plus
 #'   the fitted ground-up mean relationship.
+#' @examples
+#' set.seed(2)
+#' d <- data.frame(cov_a = rep(c(200000, 400000, 600000), each = 80))
+#' d$loss <- rlnorm(nrow(d), log(.07*d$cov_a), .8)
+#' f <- fit_severity(d, "loss", scale_by = "cov_a", hessian = FALSE)
+#' plot_scaling_fit(f, bins = 3, nsim = 1)
 #' @export
 plot_scaling_fit <- function(object, bins = 10, bin_method = c("quantile", "width"),
                              scale_range = NULL, nsim = 50, seed = NULL) {
@@ -196,6 +358,11 @@ plot_scaling_fit <- function(object, bins = 10, bin_method = c("quantile", "widt
 #' @param nsim Number of simulated observed portfolios.
 #' @param seed Optional random seed.
 #' @return A data frame comparing actual and simulated behavior in the layer.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
+#' diagnose_fit(fit, lower = 1000, upper = 30000, nsim = 1)
 #' @export
 diagnose_fit <- function(object, lower = 0, upper = Inf, scale_range = NULL,
                          nsim = 100, seed = NULL) {

@@ -14,9 +14,9 @@
 #'
 #' @param data A data frame containing claim-level observations.
 #' @param loss Character scalar naming the ground-up loss column.
-#' @param deductible Character scalar naming the deductible column.
-#' @param limit Character scalar naming the ground-up censoring limit column.
-#'   Use `Inf` in the data for claims that are not subject to a finite limit.
+#' @param deductible Optional character scalar naming the deductible column; omitted means no deductible.
+#' @param limit Optional character scalar naming the ground-up censoring-limit column.
+#'   Omission means no censoring; use `Inf` for individually unlimited claims.
 #' @param distribution Distribution family. See `?actuarialfitdist`.
 #' @param scale_by Optional character scalar naming a numeric severity-scaling
 #'   variable. For homeowners this may be Coverage A; for other lines it may be
@@ -33,25 +33,28 @@
 #' @param fixed Named list of natural-scale parameters to hold fixed.
 #' @param control List passed to `stats::optim()`.
 #' @param hessian Logical; calculate a numerical Hessian and covariance matrix.
+#' @param invalid_rows `"warn_drop"` excludes anomalous rows with a warning (default);
+#'   `"error"` stops and identifies affected original positions.
+#'   Anomalies include ground-up loss at/below deductible and above a finite
+#'   censoring limit; investigate the valuation basis before fitting.
 #' @return An object of class `actuarialfitdist_fit`.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal")
+#' summary(fit)
 #' @export
-fit_severity <- function(data, loss, deductible, limit, distribution,
+fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distribution = "lognormal",
                          scale_by = NULL, scale_intercept = FALSE,
                          weights = NULL, fixed = list(), control = list(),
-                         hessian = TRUE) {
-  if (!is.data.frame(data)) .afd_stop("`data` must be a data frame.")
-  loss_col <- .afd_match_col(data, loss, "loss")
-  ded_col <- .afd_match_col(data, deductible, "deductible")
-  lim_col <- .afd_match_col(data, limit, "limit")
-  scale_col <- .afd_match_col(data, scale_by, "scale_by", required = FALSE)
-  weight_col <- .afd_match_col(data, weights, "weights", required = FALSE)
-
-  x <- data[[loss_col]]
-  d <- data[[ded_col]]
-  u <- data[[lim_col]]
+                         hessian = TRUE, invalid_rows = c("warn_drop", "error")) {
+  prep <- .afd_prepare(data, loss, deductible, limit, weights, scale_by, invalid_rows)
+  data <- prep$data; cols <- prep$cols
+  loss_col <- cols$loss; ded_col <- cols$deductible; lim_col <- cols$limit
+  scale_col <- cols$scale_by; weight_col <- cols$weights
+  x <- data[[loss_col]]; d <- data[[ded_col]]; u <- data[[lim_col]]
   w <- if (is.null(weight_col)) rep(1, nrow(data)) else data[[weight_col]]
   z <- if (is.null(scale_col)) NULL else data[[scale_col]]
-  .afd_validate_ground_up(x, d, u, w, z)
 
   dist <- .afd_normalize_distribution(distribution)
   spec <- .afd_make_param_spec(dist, x, z, scale_intercept)
@@ -118,7 +121,8 @@ fit_severity <- function(data, loss, deductible, limit, distribution,
     n = nrow(data), n_eff = n_eff,
     n_censored = sum(components$censored & w > 0),
     loglik_contributions = components$loglik,
-    weights = w,
+    weights = w, excluded_rows = prep$excluded_rows,
+    excluded_details = prep$excluded_details, retained_rows = prep$retained_rows,
     notes = .afd_distribution_note(dist)
   )
   class(out) <- "actuarialfitdist_fit"
@@ -135,16 +139,37 @@ fit_severity <- function(data, loss, deductible, limit, distribution,
 #' @inheritParams fit_severity
 #' @param distributions Character vector of candidate families. Defaults to all
 #'   supported single-family distributions.
+#' @usage fit_severity_candidates(
+#'   data, loss, deductible = NULL, limit = NULL,
+#'   distributions = c("weibull", "gamma", "lognormal",
+#'     "pareto2", "burr", "normal", "exponential",
+#'     "loglogistic", "invgauss", "gpd"),
+#'   scale_by = NULL, scale_intercept = FALSE,
+#'   weights = NULL, fixed = list(), control = list(),
+#'   hessian = TRUE, invalid_rows = c("warn_drop", "error")
+#' )
 #' @return An object of class `actuarialfitdist_candidates`.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' candidates <- fit_severity_candidates(d, "loss",
+#'   distributions = c("lognormal", "gamma"), hessian = FALSE)
+#' candidates$comparison
+#' candidates$fits$lognormal
+#' plot_candidate_fits(candidates, nsim = 1)
 #' @export
-fit_severity_candidates <- function(data, loss, deductible, limit,
+fit_severity_candidates <- function(data, loss, deductible = NULL, limit = NULL,
                                     distributions = c(
                                       "weibull", "gamma", "lognormal", "pareto2", "burr",
                                       "normal", "exponential", "loglogistic", "invgauss", "gpd"
                                     ),
                                     scale_by = NULL, scale_intercept = FALSE,
                                     weights = NULL, fixed = list(), control = list(),
-                                    hessian = TRUE) {
+                                    hessian = TRUE, invalid_rows = c("warn_drop", "error")) {
+  prep <- .afd_prepare(data, loss, deductible, limit, weights, scale_by, invalid_rows)
+  data <- prep$data
+  loss <- prep$cols$loss; deductible <- prep$cols$deductible
+  limit <- prep$cols$limit
   fits <- vector("list", length(distributions)); names(fits) <- distributions
   rows <- vector("list", length(distributions))
   for (i in seq_along(distributions)) {
@@ -152,9 +177,14 @@ fit_severity_candidates <- function(data, loss, deductible, limit,
     f <- tryCatch(
       fit_severity(data, loss, deductible, limit, nm, scale_by, scale_intercept,
                    weights, fixed = fixed[[nm]] %||% list(), control = control,
-                   hessian = hessian),
+                   hessian = hessian, invalid_rows = "error"),
       error = function(e) e
     )
+    if (inherits(f, "actuarialfitdist_fit")) {
+      f$excluded_rows <- prep$excluded_rows
+      f$excluded_details <- prep$excluded_details
+      f$retained_rows <- prep$retained_rows
+    }
     fits[[i]] <- f
     if (inherits(f, "actuarialfitdist_fit")) {
       rows[[i]] <- data.frame(
@@ -171,7 +201,8 @@ fit_severity_candidates <- function(data, loss, deductible, limit,
       )
     }
   }
-  out <- list(call = match.call(), fits = fits, comparison = do.call(rbind, rows))
+  out <- list(call = match.call(), fits = fits, comparison = do.call(rbind, rows),
+              excluded_rows = prep$excluded_rows, excluded_details = prep$excluded_details)
   class(out) <- "actuarialfitdist_candidates"
   out
 }

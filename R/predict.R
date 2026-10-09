@@ -105,6 +105,11 @@
 #' @param p Probability or vector of probabilities.
 #' @param scale_value Optional scaling value for a model fitted with `scale_by`.
 #' @return Numeric vector of ground-up severity quantiles.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
+#' severity_quantile(fit, c(.5, .9, .99))
 #' @export
 severity_quantile <- function(object, p, scale_value = NULL) {
   if (!inherits(object, "actuarialfitdist_fit")) .afd_stop("`object` must be a fitted actuarialfitdist model.")
@@ -120,6 +125,11 @@ severity_quantile <- function(object, p, scale_value = NULL) {
 #' @param threshold Ground-up severity threshold.
 #' @param scale_value Optional scaling value for a model fitted with `scale_by`.
 #' @return Probability that severity exceeds the threshold.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
+#' exceedance_probability(fit, 100000)
 #' @export
 exceedance_probability <- function(object, threshold, scale_value = NULL) {
   if (!inherits(object, "actuarialfitdist_fit")) .afd_stop("`object` must be a fitted actuarialfitdist model.")

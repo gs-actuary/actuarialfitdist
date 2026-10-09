@@ -36,6 +36,12 @@
 #'   selected threshold to keep the bootstrap inexpensive and stable.
 #' @return An object of class `actuarialfitdist_bootstrap` containing coefficient
 #'   estimates and convergence status by replicate.
+#' @examples
+#' set.seed(123)
+#' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+#' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
+#' boot <- bootstrap_fit(fit, R = 3, type = "case", seed = 1)
+#' boot$success_rate
 #' @export
 bootstrap_fit <- function(object, R = 200, type = c("parametric", "case"),
                           seed = NULL, refit_threshold = FALSE) {

@@ -1,11 +1,12 @@
-\name{plot_fit}
-\alias{plot_fit}
-\title{Plot censoring-aware goodness of fit}
-\description{Compare observed claim severities with model-simulated observed severities, accounting for deductible, limit and scaling structures.}
+\name{plot_candidate_fits}
+\alias{plot_candidate_fits}
+\title{Compare observed and fitted severity across candidate distributions}
+\description{Facet or overlay the empirical observed severity distribution and simulations under each successfully converged candidate.}
 \usage{
-plot_fit(object, type = c("histogram", "density", "cdf", "survival"),
-                     scale_range = NULL, nsim = 20, seed = NULL, bins = 30,
-                     x_scale = c("log10", "linear"), xlim = NULL)
+plot_candidate_fits(object, type = c("histogram", "density", "cdf", "survival"),
+                                scale_range = NULL, nsim = 3, seed = NULL,
+                                bins = 40, x_scale = c("log10", "linear"),
+                                xlim = NULL, facet = TRUE)
 }
 \arguments{
 \item{object}{Fitted severity model or candidate-fits object as appropriate.}
@@ -16,13 +17,15 @@ plot_fit(object, type = c("histogram", "density", "cdf", "survival"),
 \item{bins}{Number of histogram bins or scale buckets as applicable.}
 \item{x_scale}{"log10" (default) or "linear".}
 \item{xlim}{Optional finite x-axis viewport limits; does not filter observations.}
+\item{facet}{Facet candidates into separate charts (TRUE) or overlay all candidates (FALSE).}
 }
 \details{Input losses must be positive ground-up severities. Deductibles cause left truncation; limits cause right censoring. For fitted payment factors, limit instead refers to a payment cap applied after deductible. Data that violate fitted observation assumptions are excluded with original row indices retained. See also the package vignettes.}
 \value{A fitted model, comparison, data frame, numeric result or ggplot as described.}
 \examples{
 set.seed(123)
 d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
-fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
-plot_fit(fit, x_scale = "log10", nsim = 1, seed = 1)
+candidates <- fit_severity_candidates(d, "loss",
+  distributions = c("lognormal", "gamma"), hessian = FALSE)
+plot_candidate_fits(candidates, nsim = 1, x_scale = "log10")
 
 }

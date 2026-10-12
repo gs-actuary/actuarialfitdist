@@ -70,10 +70,10 @@
 
 .afd_clip_prob <- function(p) pmin(pmax(p, 1e-12), 1 - 1e-12)
 
-.afd_num_hessian <- function(fn, par, rel_step = 1e-4) {
+.afd_num_hessian <- function(fn, par, rel_step = 1e-4, parscale = rep(1, length(par))) {
   p <- length(par)
   if (p == 0L) return(matrix(numeric(), 0, 0))
-  h <- rel_step * pmax(abs(par), 1)
+  h <- rel_step * pmax(abs(par), parscale)
   H <- matrix(NA_real_, p, p)
   f0 <- fn(par)
   for (i in seq_len(p)) {
@@ -183,4 +183,28 @@
   list(data = clean, cols = list(loss = lc, deductible = dc, limit = uc,
        weights = wc, scale_by = sc), excluded_rows = excluded,
        excluded_details = details, retained_rows = retained)
+}
+
+# Optimizer parscale applies to the *encoded* parameter vector. Other encoded
+# parameters (log-scales, log-shapes, logits) naturally have unit-size steps.
+# A free additive severity intercept is measured in original currency units.
+# Keep its optimizer coordinate on a numerically meaningful scale without
+# changing either the parameter or its starting value.
+.afd_optimizer_control <- function(control, unknown, loss, maxit = 2000L) {
+  out <- utils::modifyList(list(maxit = maxit, reltol = 1e-10), control)
+  if (is.null(control$parscale)) {
+    ps <- stats::setNames(rep(1, length(unknown)), unknown)
+    is_intercept <- unknown %in% c("scale_intercept", "body_scale_intercept",
+                                    "tail_scale_intercept")
+    if (any(is_intercept)) {
+      typical <- stats::median(loss[is.finite(loss) & loss > 0])
+      ps[is_intercept] <- max(1000, 0.10 * typical)
+    }
+    out$parscale <- unname(ps)
+  }
+  if (length(out$parscale) != length(unknown) ||
+      any(!is.finite(out$parscale)) || any(out$parscale <= 0)) {
+    .afd_stop("`control$parscale` must contain one strictly positive finite value per free optimizer parameter, in the parameter order shown by `optim_par`.")
+  }
+  out
 }

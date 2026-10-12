@@ -39,3 +39,15 @@ When checking through `R CMD check`, first build with `R CMD build actuarialfitd
 This ZIP has pre-generated Rd pages; use `devtools::document()` to regenerate
 those pages and the NAMESPACE from the roxygen comments before final check.
 See `CRAN_READINESS.md` for the remaining verification and statistical caveats.
+
+
+## Documentation in 0.2.1 (repaired)
+
+Documentation for public entry points is maintained using roxygen2 comments in
+`R/*.R`; most `man/*.Rd` files are generated outputs. The consolidated
+`man/actuarialfitdist_fit_methods.Rd` file remains hand-maintained for
+methods whose only roxygen annotation is `@export`. Run `devtools::document()`
+when editing roxygen comments, then `devtools::test()` and `devtools::check()`.
+The `@docType package` warning has been removed in favor of `_PACKAGE` and
+S3 method registration for `print.summary.actuarialfitdist_fit` is declared
+with `@export`.

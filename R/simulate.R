@@ -30,7 +30,29 @@
     # Simulate from the fitted distribution conditional on exceeding each row's deductible.
     Fd <- .afd_fit_cdf(fit, d, if (all(is.na(z))) NULL else z)
     target <- Fd + stats::runif(n) * (1 - Fd)
-    ground <- .afd_fit_quantile(fit, target, if (all(is.na(z))) NULL else z)
+    if (fit$model == "single" && fit$distribution == "invgauss") {
+      # Numerically inverting the inverse-Gaussian CDF for EVERY simulated
+      # claim is extremely expensive. Rejection from the vectorized exact RNG
+      # is fast at ordinary deductibles; use exact inversion only for remaining
+      # extreme truncation cases after a bounded number of retries.
+      parts <- .afd_single_eval_parts(fit, if (all(is.na(z))) NULL else z)
+      ss <- rep(parts$s, length.out = n)
+      ground <- rep(NA_real_, n)
+      pending <- seq_len(n)
+      for (attempt in seq_len(40L)) {
+        if (!length(pending)) break
+        draw <- .afd_r("invgauss", length(pending), ss[pending], parts$shape)
+        accepted <- is.finite(draw) & draw > d[pending]
+        ground[pending[accepted]] <- draw[accepted]
+        pending <- pending[!accepted]
+      }
+      if (length(pending)) {
+        ground[pending] <- .afd_q("invgauss", target[pending],
+                                  ss[pending], parts$shape)
+      }
+    } else {
+      ground <- .afd_fit_quantile(fit, target, if (all(is.na(z))) NULL else z)
+    }
     observed <- pmin(ground, u)
     censored <- is.finite(u) & ground >= u
     ans[[r]] <- data.frame(

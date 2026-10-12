@@ -16,14 +16,18 @@
 #' combinations may use any supported family on either side of the threshold.
 #'
 #' @importFrom stats AIC BIC coef confint logLik simulate vcov
-#' @docType package
-#' @name actuarialfitdist-package
-NULL
+#' @importFrom stats dgamma dlnorm dnorm dweibull integrate optim pnorm
+#' @importFrom stats qgamma qlnorm qnorm qweibull rgamma rlnorm rnorm
+#' @importFrom stats runif rweibull uniroot
+#' @importFrom ggplot2 aes geom_histogram geom_line geom_point ggplot
+#' @importFrom ggplot2 labs theme_minimal
+#' @keywords internal
+"_PACKAGE"
 
 # Variables referenced through ggplot2's non-standard evaluation. Declaring
 # them here prevents R CMD check from treating aesthetic column names as
 # undefined R globals.
 utils::globalVariables(c(
   "observed_loss", "density", "weight", "source", "simulation",
-  "x", "y", "scale_value", "mean", "series", "distribution"
+  "x", "y", "scale_value", "mean", "series", "distribution", ".data"
 ))

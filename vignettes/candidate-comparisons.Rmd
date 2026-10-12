@@ -49,18 +49,26 @@ forced onto every loss dataset; inspect convergence and factor stability.
 
 # Visual comparison
 
-Simulated portfolio claims reproduce row-level censoring limits and deductibles.
-Thus the histogram comparisons are made on the **observed** basis. The default
+Modeled portfolio probabilities reproduce row-level censoring limits and deductibles.
+Thus the histogram comparisons are made on the **observed** basis.
+The new analytic default computes expected bin counts without Monte Carlo
+simulation; `method = "simulation"` restores the stochastic plot. The default
 horizontal axis is logarithmic, and specifying `xlim` changes only the displayed
 range. Use `scale_range = c(lower, upper)` when fitting with `scale_by`.
 
 ```{r candidate-plots, fig.width=8, fig.height=5}
-plot_candidate_fits(candidates, type = "histogram", nsim = 2, seed = 22,
-  x_scale = "log10", xlim = c(500, 200000))
+plot_candidate_fits(candidates, type = "histogram",
+  x_scale = "log10", xlim = c(500, 200000),
+  x_text_angle = 45, x_text_size = 8)
 ```
 
 ```{r candidate-data}
-head(candidate_plot_data(candidates, nsim = 1, seed = 22))
+# Deterministic summaries: the very same bins drawn in the default plot.
+head(candidate_plot_data(candidates, output = "plot_ready",
+  type = "histogram", xlim = c(500, 200000)))
+
+# Old row-level simulations remain available when requested.
+head(candidate_plot_data(candidates, nsim = 1, seed = 22, output = "raw"))
 ```
 
 # Convert fits to rating factors and assess sensitivity
@@ -101,4 +109,18 @@ fit <- suppressWarnings(fit_severity(bad, loss = "ground_up_loss",
   limit = "censor_limit", distribution = "lognormal", hessian = FALSE))
 fit$excluded_rows
 fit$excluded_details
+```
+
+
+# Optimization diagnostics
+
+Inspect the candidate table for outlying runtimes or optimizer evaluation
+counts. When fitting `scale_intercept = TRUE`, the optimizer automatically
+scales its intercept parameter; it does not constrain its value. A caller can
+still supply `control$parscale` explicitly. The displayed fit coefficients
+remain in their original units.
+
+```{r optimizer-table}
+candidates$comparison[, c("distribution", "elapsed_seconds",
+  "function_evaluations", "gradient_evaluations", "convergence_code")]
 ```

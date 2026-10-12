@@ -31,7 +31,12 @@
 #'   equivalent to two identical observations. Noninteger weights define a
 #'   weighted or pseudo-likelihood.
 #' @param fixed Named list of natural-scale parameters to hold fixed.
-#' @param control List passed to `stats::optim()`.
+#' @param control List passed to `stats::optim()`. When an additive scale
+#'   intercept is estimated, the package sets the optimizer's `parscale` for
+#'   that coordinate to `max(1000, 0.1 * median(loss))`; other free coordinates
+#'   use 1. Explicit `control$parscale` overrides this heuristic and must
+#'   follow the order in `$optim_par`. This affects numerical optimization,
+#'   not the statistical scale model or reported coefficients.
 #' @param hessian Logical; calculate a numerical Hessian and covariance matrix.
 #' @param invalid_rows `"warn_drop"` excludes anomalous rows with a warning (default);
 #'   `"error"` stops and identifies affected original positions.
@@ -48,6 +53,7 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
                          scale_by = NULL, scale_intercept = FALSE,
                          weights = NULL, fixed = list(), control = list(),
                          hessian = TRUE, invalid_rows = c("warn_drop", "error")) {
+  started <- proc.time()[["elapsed"]]
   prep <- .afd_prepare(data, loss, deductible, limit, weights, scale_by, invalid_rows)
   data <- prep$data; cols <- prep$cols
   loss_col <- cols$loss; ded_col <- cols$deductible; lim_col <- cols$limit
@@ -59,10 +65,12 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
   dist <- .afd_normalize_distribution(distribution)
   spec <- .afd_make_param_spec(dist, x, z, scale_intercept)
   packed <- .afd_pack_parameters(spec, fixed)
+  groups <- .afd_likelihood_groups(d, u, z)
+  optim_control <- .afd_optimizer_control(control, packed$unknown, x)
 
   objective <- function(opt) {
     params <- packed$decode(opt)
-    ll <- .afd_single_loglik(dist, params, x, d, u, w, z)
+    ll <- .afd_single_loglik(dist, params, x, d, u, w, z, groups)
     if (!is.finite(ll)) return(1e100)
     -ll
   }
@@ -70,17 +78,19 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
   if (length(packed$start)) {
     opt <- stats::optim(
       par = packed$start, fn = objective, method = "BFGS",
-      control = utils::modifyList(list(maxit = 2000, reltol = 1e-10), control)
+      control = optim_control
     )
     optim_par <- opt$par
     convergence <- opt$convergence
     message <- opt$message
     value <- opt$value
+    optim_counts <- opt$counts
   } else {
     optim_par <- numeric()
     convergence <- 0L
     message <- "All parameters fixed; no optimization performed."
     value <- objective(numeric())
+    optim_counts <- c("function" = 0L, gradient = 0L)
   }
   params <- packed$decode(optim_par)
   components <- .afd_single_components(dist, params, x, d, u, z)
@@ -91,7 +101,7 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
 
   H <- Vopt <- Vnat <- NULL
   if (isTRUE(hessian) && length(optim_par) && convergence == 0L) {
-    H <- .afd_num_hessian(objective, optim_par)
+    H <- .afd_num_hessian(objective, optim_par, parscale = optim_control$parscale)
     Vopt <- .afd_safe_inverse(H)
     if (!is.null(Vopt)) {
       # Numerical Jacobian of natural parameters with respect to optimization parameters.
@@ -115,6 +125,8 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
     BIC = log(max(n_eff, 1)) * k + 2 * value,
     convergence = convergence, message = message,
     optim_par = optim_par, npar = k, hessian = H, vcov = Vnat,
+    optimizer_counts = optim_counts, optimizer_control = optim_control,
+    elapsed_seconds = unname(proc.time()[["elapsed"]] - started),
     data = data, columns = list(loss = loss_col, deductible = ded_col, limit = lim_col,
                                 scale_by = scale_col, weights = weight_col),
     scale_intercept = isTRUE(scale_intercept),
@@ -132,7 +144,8 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
 #' Fit and compare candidate severity distributions
 #'
 #' Fits several supported families to the same ground-up-loss data and returns
-#' both the fitted models and a comparison table. The function intentionally
+#' both the fitted models and a comparison table with per-distribution
+#' optimization runtimes, evaluation counts, and convergence codes. The function intentionally
 #' does not choose a winner automatically; actuarial tail behavior and rating
 #' factor stability can matter even when information criteria are close.
 #'
@@ -174,6 +187,7 @@ fit_severity_candidates <- function(data, loss, deductible = NULL, limit = NULL,
   rows <- vector("list", length(distributions))
   for (i in seq_along(distributions)) {
     nm <- distributions[i]
+    t0 <- proc.time()[["elapsed"]]
     f <- tryCatch(
       fit_severity(data, loss, deductible, limit, nm, scale_by, scale_intercept,
                    weights, fixed = fixed[[nm]] %||% list(), control = control,
@@ -186,18 +200,24 @@ fit_severity_candidates <- function(data, loss, deductible = NULL, limit = NULL,
       f$retained_rows <- prep$retained_rows
     }
     fits[[i]] <- f
+    seconds <- unname(proc.time()[["elapsed"]] - t0)
     if (inherits(f, "actuarialfitdist_fit")) {
       rows[[i]] <- data.frame(
         distribution = f$distribution, converged = f$convergence == 0L,
         logLik = f$logLik, AIC = f$AIC, BIC = f$BIC,
         parameters = .afd_param_count(f), n = f$n, n_censored = f$n_censored,
-        error = NA_character_, stringsAsFactors = FALSE
+        error = NA_character_, elapsed_seconds = seconds,
+        function_evaluations = unname(f$optimizer_counts[["function"]]),
+        gradient_evaluations = unname(f$optimizer_counts[["gradient"]]),
+        convergence_code = f$convergence, stringsAsFactors = FALSE
       )
     } else {
       rows[[i]] <- data.frame(
         distribution = nm, converged = FALSE, logLik = NA_real_, AIC = NA_real_, BIC = NA_real_,
         parameters = NA_integer_, n = nrow(data), n_censored = NA_integer_,
-        error = conditionMessage(f), stringsAsFactors = FALSE
+        error = conditionMessage(f), elapsed_seconds = seconds,
+        function_evaluations = NA_real_, gradient_evaluations = NA_real_,
+        convergence_code = NA_integer_, stringsAsFactors = FALSE
       )
     }
   }

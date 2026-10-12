@@ -243,3 +243,64 @@ head(plot_dat)
 `fit_plot_data()` is public specifically so analysts can build their own `ggplot2`, Plotly, or reporting layer without reimplementing the observation logic.
 
 See the vignette and `inst/examples/` for property-damage limits, collision deductibles, homeowners scaling, spliced models, weights, parameter fixing, depreciation, bootstrap inference, and Plotly examples.
+
+
+## Faster candidate fitting and plot data (0.2.1)
+
+With `scale_intercept = TRUE`, BFGS now automatically scales the additive
+intercept coordinate by `max(1000, 0.10 * median(loss))`. That affects only
+numerical optimization, not the fitted severity relationship. Supply your own
+`control = list(parscale = c(...))` to override the heuristic; the order is
+reported in a fitted model's `optim_par` vector. A fitted model also includes
+`optimizer_control`, `optimizer_counts`, and `elapsed_seconds`. Candidate
+comparisons include separate timing and optimizer-evaluation columns for each
+family.
+
+The default plots are **analytic**, comparing the actual portfolio to the
+expected distribution of observed claim amounts under the fitted model,
+conditional on deductibles and capped at censoring limits. This avoids
+unnecessary simulation and costly inverse-Gaussian numerical quantiles.
+For alternative simulation-based diagnostics, set `method = "simulation"`.
+Analytic density summaries are **bin-based probability densities** (with mass
+at finite censoring limits included in the appropriate bins), not smoothed
+continuous PDFs. For logarithmic axes the densities are per log10 severity,
+so observed and modeled lines/bars use matching units.
+
+```r
+set.seed(101)
+d <- data.frame(coverage_amount = rep(seq(200000, 600000, by = 50000), each = 100))
+d$deductible <- sample(c(1000, 2500), nrow(d), TRUE)
+d$loss <- rweibull(nrow(d), shape = 0.8, scale = 0.15 * d$coverage_amount)
+d <- subset(d, loss > deductible)
+
+fits <- fit_severity_candidates(
+  d, loss = "loss", deductible = "deductible",
+  scale_by = "coverage_amount", scale_intercept = TRUE,
+  distributions = c("weibull", "gamma", "lognormal"), hessian = FALSE)
+fits$comparison[, c("distribution", "AIC", "elapsed_seconds",
+                    "function_evaluations", "convergence_code")]
+
+# Default: fast and deterministic, readable axis labels in facets.
+plot_candidate_fits(fits, type = "density", x_text_angle = 45,
+                    x_text_size = 8, xlim = c(1000, 250000))
+
+# The *exact* plotted summaries are public and editable:
+plot_df <- candidate_plot_data(fits, output = "plot_ready",
+  type = "density", xlim = c(1000, 250000))
+head(plot_df)
+# Build a custom ggplot or Plotly chart from plot_df$x and plot_df$value.
+
+# Backwards-compatible individual records, for simulation/diagnostics:
+raw <- candidate_plot_data(fits, nsim = 1, output = "raw", seed = 4)
+
+# For the scaling diagnostic:
+scale_df <- scaling_plot_data(fits$fits$weibull,
+  bins = 5, nsim = 1, output = "plot_ready")
+```
+
+The public builders `fit_plot_data()`, `candidate_plot_data()` and
+`scaling_plot_data()` return the same data consumed by their corresponding
+plot functions. `plot_fit()`, `plot_candidate_fits()` and `plot_scaling_fit()`
+expose axis-label angle, font sizes and optional x tick positions. Plot
+objects remain ggplots, so arbitrary additional ggplot2 customization is
+supported.

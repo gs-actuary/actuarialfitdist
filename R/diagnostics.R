@@ -22,14 +22,34 @@
 #' @param scale_range Optional two-element range of fitted scaling values.
 #' @param nsim Number of simulated observed portfolios.
 #' @param seed Optional random seed.
-#' @return Long data frame with actual and simulated observed severities.
+#' @param output `"raw"` (default) preserves individual actual/simulated rows;
+#'   `"plot_ready"` returns the exact deterministic summary consumed by the
+#'   default plotting functions, with columns `source`, `x`, `value`, `lower`,
+#'   and `upper`. `value` is probability density in the displayed x coordinate
+#'   (per log10 severity when requested), or a CDF/survival probability.
+#' @param type Summary type when `output = "plot_ready"`.
+#' @param bins Number of histogram bins.
+#' @param points Number of grid intervals for density/CDF/survival summaries.
+#' @param x_scale `"log10"` or `"linear"` for plot-ready summaries.
+#' @param xlim Optional grid interval. Unlike data filtering, the probabilities
+#'   are computed relative to the complete selected portfolio.
+#' @return Data frame of actual/simulated claim records or plot-ready summaries.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
 #' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
 #' head(fit_plot_data(fit, nsim = 1, seed = 1))
 #' @export
-fit_plot_data <- function(object, scale_range = NULL, nsim = 20, seed = NULL) {
+fit_plot_data <- function(object, scale_range = NULL, nsim = 20, seed = NULL,
+                          output = c("raw", "plot_ready"),
+                          type = c("density", "histogram", "cdf", "survival"),
+                          bins = 40, points = 160, x_scale = c("log10", "linear"),
+                          xlim = NULL) {
+  output <- match.arg(output)
+  if (output == "plot_ready") {
+    return(.afd_plot_ready(object, scale_range, match.arg(type), bins, points,
+                            match.arg(x_scale), xlim))
+  }
   if (!inherits(object, "actuarialfitdist_fit")) .afd_stop("`object` must be a fitted actuarialfitdist model.")
   keep <- .afd_filter_scale_range(object, object$data, scale_range)
   dat <- object$data[keep, , drop = FALSE]
@@ -67,14 +87,20 @@ fit_plot_data <- function(object, scale_range = NULL, nsim = 20, seed = NULL) {
 }
 
 # Shared x-axis styling helper (not a user-facing function).
-.afd_plot_x <- function(p, x_scale, xlim) {
+.afd_plot_x <- function(p, x_scale, xlim, x_breaks = NULL,
+                        x_text_angle = 0, x_text_size = 9, y_text_size = 9) {
   x_scale <- match.arg(x_scale, c("log10", "linear"))
+  if (!is.null(x_breaks) && (!is.numeric(x_breaks) || any(!is.finite(x_breaks)) ||
+      (x_scale == "log10" && any(x_breaks <= 0)))) {
+    .afd_stop("`x_breaks` must contain finite numeric values, positive for log10.")
+  }
   if (x_scale == "log10") {
     p <- p + ggplot2::scale_x_log10(
-      breaks = scales::breaks_log(n = 7),
+      breaks = x_breaks %||% scales::breaks_log(n = 5),
       labels = scales::label_number(big.mark = ",", accuracy = 1))
   } else {
     p <- p + ggplot2::scale_x_continuous(
+      breaks = x_breaks %||% scales::breaks_extended(n = 5),
       labels = scales::label_number(big.mark = ",", accuracy = 1))
   }
   if (!is.null(xlim)) {
@@ -83,7 +109,18 @@ fit_plot_data <- function(object, scale_range = NULL, nsim = 20, seed = NULL) {
       .afd_stop("`xlim` must be two increasing finite values (positive for log10).")
     p <- p + ggplot2::coord_cartesian(xlim = xlim)
   }
-  p
+  .afd_plot_style(p, x_text_angle, x_text_size, y_text_size)
+}
+
+.afd_plot_style <- function(p, x_text_angle = 0, x_text_size = 9, y_text_size = 9) {
+  if (length(x_text_angle) != 1L || !is.finite(x_text_angle) ||
+      length(x_text_size) != 1L || !is.finite(x_text_size) || x_text_size <= 0 ||
+      length(y_text_size) != 1L || !is.finite(y_text_size) || y_text_size <= 0)
+    .afd_stop("Axis angles and text sizes must be finite scalars; sizes must be positive.")
+  p + ggplot2::theme(
+    axis.text.x = ggplot2::element_text(angle = x_text_angle,
+      hjust = if (x_text_angle == 0) .5 else 1, vjust = 1, size = x_text_size),
+    axis.text.y = ggplot2::element_text(size = y_text_size))
 }
 
 #' Plot censoring-aware goodness of fit
@@ -98,7 +135,16 @@ fit_plot_data <- function(object, scale_range = NULL, nsim = 20, seed = NULL) {
 #' @param bins Number of histogram bins.
 #' @param x_scale `"log10"` (default) or `"linear"`.
 #' @param xlim Optional visible x-axis range (without dropping observations).
-#' @return ggplot object.
+#' @param method `"analytic"` (default) computes fitted expected bin counts
+#'   and CDF directly, including censoring atoms. `"simulation"` retains the
+#'   earlier simulation-based diagnostic; `nsim` is used only in this mode.
+#' @param x_breaks Optional user-supplied x-axis tick positions.
+#' @param x_text_angle Axis tick label rotation in degrees.
+#' @param x_text_size Horizontal-axis tick label font size in points.
+#' @param y_text_size Vertical-axis tick label font size in points.
+#' @param points Number of intervals for analytic density and CDF summaries.
+#' @return ggplot object. Use `fit_plot_data(output = "plot_ready", ...)`
+#'   to get the exact analytic plot data.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -107,8 +153,21 @@ fit_plot_data <- function(object, scale_range = NULL, nsim = 20, seed = NULL) {
 #' @export
 plot_fit <- function(object, type = c("histogram", "density", "cdf", "survival"),
                      scale_range = NULL, nsim = 20, seed = NULL, bins = 30,
-                     x_scale = c("log10", "linear"), xlim = NULL) {
+                     x_scale = c("log10", "linear"), xlim = NULL,
+                     method = c("analytic", "simulation"), points = 160,
+                     x_breaks = NULL, x_text_angle = 0,
+                     x_text_size = 9, y_text_size = 9) {
   type <- match.arg(type); x_scale <- match.arg(x_scale)
+  method <- match.arg(method)
+  if (method == "analytic") {
+    dat <- fit_plot_data(object, scale_range = scale_range,
+      output = "plot_ready", type = type, bins = bins, points = points,
+      x_scale = x_scale, xlim = xlim)
+    p <- .afd_plot_ready_ggplot(dat, type, facet = FALSE,
+      title = "Observed vs fitted claim severity", x_scale = x_scale)
+    return(.afd_plot_x(p, x_scale, xlim, x_breaks,
+                       x_text_angle, x_text_size, y_text_size))
+  }
   dat <- fit_plot_data(object, scale_range, nsim, seed)
   if (x_scale == "log10" && any(dat$observed_loss <= 0))
     .afd_stop("Log10 plots require positive observed severities; select `x_scale = 'linear'`.")
@@ -137,7 +196,8 @@ plot_fit <- function(object, type = c("histogram", "density", "cdf", "survival")
         colour = NULL, title = paste("Observed vs simulated", toupper(type))) +
       ggplot2::theme_minimal()
   }
-  .afd_plot_x(p, x_scale, xlim)
+  .afd_plot_x(p, x_scale, xlim, x_breaks,
+              x_text_angle, x_text_size, y_text_size)
 }
 
 #' Data for comparing several candidate severity distributions
@@ -150,7 +210,16 @@ plot_fit <- function(object, type = c("histogram", "density", "cdf", "survival")
 #' @param scale_range Optional range of `scale_by` values.
 #' @param nsim Number of observed-portfolio simulations per candidate.
 #' @param seed Optional reproducibility seed.
-#' @return Long-format data frame including a `distribution` column.
+#' @param output `"raw"` (default) returns claim-level simulations;
+#'   `"plot_ready"` returns deterministic bin densities/CDF/survival values
+#'   consumed by `plot_candidate_fits(method = "analytic")`.
+#' @param type Plot-ready summary type.
+#' @param bins Histogram bin count.
+#' @param points Density/CDF grid intervals.
+#' @param x_scale `"log10"` (default) or `"linear"` plot coordinate.
+#' @param xlim Optional plot-ready grid range; not a claim filter.
+#' @return Data frame including `distribution`, `source`, `x`, `value`,
+#'   `lower`, `upper` for plot-ready output; raw output preserves observed losses.
 #' @examples
 #' set.seed(11)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -158,12 +227,37 @@ plot_fit <- function(object, type = c("histogram", "density", "cdf", "survival")
 #'   distributions = c("lognormal", "gamma"), hessian = FALSE)
 #' head(candidate_plot_data(candidates, nsim = 1, seed = 1))
 #' @export
-candidate_plot_data <- function(object, scale_range = NULL, nsim = 3, seed = NULL) {
+candidate_plot_data <- function(object, scale_range = NULL, nsim = 3, seed = NULL,
+                                output = c("raw", "plot_ready"),
+                                type = c("density", "histogram", "cdf", "survival"),
+                                bins = 40, points = 160,
+                                x_scale = c("log10", "linear"), xlim = NULL) {
+  output <- match.arg(output)
+  type <- match.arg(type)
+  x_scale <- match.arg(x_scale)
   if (!inherits(object, "actuarialfitdist_candidates"))
     .afd_stop("`object` must be returned by `fit_severity_candidates()`. ")
   good <- vapply(object$fits, function(f) inherits(f, "actuarialfitdist_fit") &&
                     f$convergence == 0L, logical(1))
   if (!any(good)) .afd_stop("No converged candidate fits to plot.")
+  if (output == "plot_ready") {
+    chosen <- object$fits[good]
+    first <- chosen[[1L]]
+    keep <- .afd_filter_scale_range(first, first$data, scale_range)
+    selected <- first$data[keep, , drop = FALSE]
+    if (!nrow(selected)) .afd_stop("No observations remain after `scale_range`.")
+    common_breaks <- .afd_plot_breaks(selected, first$columns,
+      x_scale, xlim, bins, points, type)
+    dfs <- lapply(chosen, function(f) {
+      dat <- .afd_plot_ready(f, scale_range, type, bins, points,
+                             x_scale, xlim, common_breaks)
+      dat$distribution <- f$distribution
+      dat
+    })
+    out <- do.call(rbind, dfs)
+    rownames(out) <- NULL
+    return(out)
+  }
   if (!is.null(seed)) set.seed(seed)
   dfs <- lapply(object$fits[good], function(f) {
     dat <- fit_plot_data(f, scale_range = scale_range, nsim = nsim)
@@ -173,6 +267,32 @@ candidate_plot_data <- function(object, scale_range = NULL, nsim = 3, seed = NUL
   out <- do.call(rbind, dfs)
   rownames(out) <- NULL
   out
+}
+
+# Plot precisely the tabular values produced by the public plot-ready builders.
+.afd_plot_ready_ggplot <- function(dat, type, facet, title, x_scale) {
+  dat$series <- ifelse(dat$source == "actual", "Observed", dat$distribution %||% "Fitted")
+  if (!facet && "distribution" %in% names(dat)) {
+    dat <- dat[dat$source != "actual" |
+      !duplicated(paste(dat$x, dat$source)), , drop = FALSE]
+  }
+  if (type == "histogram") {
+    p <- ggplot2::ggplot(dat, ggplot2::aes(xmin = .data$lower,
+      xmax = .data$upper, ymin = 0, ymax = .data$value,
+      fill = .data$series)) +
+      ggplot2::geom_rect(alpha = .30, position = "identity")
+  } else {
+    p <- ggplot2::ggplot(dat, ggplot2::aes(x = .data$x, y = .data$value,
+      colour = .data$series, group = .data$series)) +
+      ggplot2::geom_line(linewidth = .65)
+  }
+  if (facet) p <- p + ggplot2::facet_wrap(~distribution, scales = "fixed")
+  ylabel <- if (type %in% c("density", "histogram")) {
+    if (x_scale == "log10") "Probability density per log10 severity" else "Probability density"
+  } else if (type == "cdf") "CDF" else "Survival probability"
+  p + ggplot2::labs(x = "Observed severity", y = ylabel,
+                     title = title, colour = NULL, fill = NULL) +
+    ggplot2::theme_minimal()
 }
 
 #' Compare observed and fitted severity across candidate distributions
@@ -191,7 +311,15 @@ candidate_plot_data <- function(object, scale_range = NULL, nsim = 3, seed = NUL
 #' @param x_scale `"log10"` (default) or `"linear"`.
 #' @param xlim Optional visible x range.
 #' @param facet Logical; facet models (default) or overlay them.
-#' @return ggplot object.
+#' @param method `"analytic"` (default) uses fast deterministic modeled bin
+#'   probabilities; `"simulation"` uses the older row-level simulation.
+#' @param points Number of density and CDF grid intervals in analytic mode.
+#' @param x_breaks Optional explicit severity-axis tick positions.
+#' @param x_text_angle Axis label rotation (degrees); defaults to 45 in facets.
+#' @param x_text_size Horizontal-axis tick font size in points.
+#' @param y_text_size Vertical-axis tick font size in points.
+#' @return ggplot object. `candidate_plot_data(output = "plot_ready", ...)`
+#'   returns the exact data used by the default plot.
 #' @examples
 #' set.seed(2)
 #' d <- data.frame(loss = rlnorm(150, log(9000), 0.9))
@@ -202,8 +330,21 @@ candidate_plot_data <- function(object, scale_range = NULL, nsim = 3, seed = NUL
 plot_candidate_fits <- function(object, type = c("histogram", "density", "cdf", "survival"),
                                 scale_range = NULL, nsim = 3, seed = NULL,
                                 bins = 40, x_scale = c("log10", "linear"),
-                                xlim = NULL, facet = TRUE) {
+                                xlim = NULL, facet = TRUE,
+                                method = c("analytic", "simulation"), points = 160,
+                                x_breaks = NULL, x_text_angle = if (facet) 45 else 0,
+                                x_text_size = 9, y_text_size = 9) {
   type <- match.arg(type); x_scale <- match.arg(x_scale)
+  method <- match.arg(method)
+  if (method == "analytic") {
+    dat <- candidate_plot_data(object, scale_range = scale_range,
+      output = "plot_ready", type = type, bins = bins, points = points,
+      x_scale = x_scale, xlim = xlim)
+    p <- .afd_plot_ready_ggplot(dat, type, facet,
+      "Candidate fits vs observed claims", x_scale)
+    return(.afd_plot_x(p, x_scale, xlim, x_breaks,
+                       x_text_angle, x_text_size, y_text_size))
+  }
   dat <- candidate_plot_data(object, scale_range, nsim, seed)
   if (x_scale == "log10" && any(dat$observed_loss <= 0))
     .afd_stop("Log-scale plotting requires positive observed losses.")
@@ -247,7 +388,8 @@ plot_candidate_fits <- function(object, type = c("histogram", "density", "cdf", 
     if (x_scale == "log10") "Density per log10 severity" else "Density" else type,
     colour = NULL, fill = NULL,
     title = "Candidate fits vs observed claims") + ggplot2::theme_minimal()
-  .afd_plot_x(p, x_scale, xlim)
+  .afd_plot_x(p, x_scale, xlim, x_breaks,
+              x_text_angle, x_text_size, y_text_size)
 }
 
 #' Data underlying the scaling relationship diagnostic
@@ -265,7 +407,9 @@ plot_candidate_fits <- function(object, type = c("histogram", "density", "cdf", 
 #' @param scale_range Optional scaling range.
 #' @param nsim Number of simulated portfolios.
 #' @param seed Optional random seed.
-#' @return Data frame with one row per scale bin.
+#' @param output `"wide"` (default) returns summary columns; `"plot_ready"`
+#'   returns the exact long data used by `plot_scaling_fit()`.
+#' @return Data frame with one row per scale bin or a long plot-ready data frame.
 #' @examples
 #' set.seed(2)
 #' d <- data.frame(cov_a = rep(c(200000, 400000, 600000), each = 80))
@@ -274,7 +418,9 @@ plot_candidate_fits <- function(object, type = c("histogram", "density", "cdf", 
 #' scaling_plot_data(f, bins = 3, nsim = 1)
 #' @export
 scaling_plot_data <- function(object, bins = 10, bin_method = c("quantile", "width"),
-                              scale_range = NULL, nsim = 50, seed = NULL) {
+                              scale_range = NULL, nsim = 50, seed = NULL,
+                              output = c("wide", "plot_ready")) {
+  output <- match.arg(output)
   if (!inherits(object, "actuarialfitdist_fit")) .afd_stop("`object` must be a fitted model.")
   sc <- object$columns$scale_by
   if (is.null(sc)) .afd_stop("Scaling diagnostics require a model fitted with `scale_by`.")
@@ -314,7 +460,15 @@ scaling_plot_data <- function(object, bins = 10, bin_method = c("quantile", "wid
       stringsAsFactors = FALSE
     )
   })
-  do.call(rbind, out)
+  summary_data <- do.call(rbind, out)
+  if (output == "wide") return(summary_data)
+  rbind(
+    data.frame(bin = summary_data$bin, scale_value = summary_data$scale_value,
+      mean = summary_data$actual_observed_mean, series = "Actual observed mean"),
+    data.frame(bin = summary_data$bin, scale_value = summary_data$scale_value,
+      mean = summary_data$modeled_observed_mean, series = "Modeled observed mean"),
+    data.frame(bin = summary_data$bin, scale_value = summary_data$scale_value,
+      mean = summary_data$fitted_ground_up_mean, series = "Fitted ground-up mean"))
 }
 
 #' Plot the fitted scaling relationship
@@ -323,6 +477,10 @@ scaling_plot_data <- function(object, bins = 10, bin_method = c("quantile", "wid
 #' observed means and the fitted ground-up mean relationship.
 #'
 #' @inheritParams scaling_plot_data
+#' @param x_breaks Optional numeric x tick positions.
+#' @param x_text_angle Rotation of the scale-axis labels in degrees.
+#' @param x_text_size Size of the scale-axis tick labels.
+#' @param y_text_size Size of the mean-severity-axis tick labels.
 #' @return A ggplot showing actual and modeled observed means by scale bin, plus
 #'   the fitted ground-up mean relationship.
 #' @examples
@@ -333,17 +491,18 @@ scaling_plot_data <- function(object, bins = 10, bin_method = c("quantile", "wid
 #' plot_scaling_fit(f, bins = 3, nsim = 1)
 #' @export
 plot_scaling_fit <- function(object, bins = 10, bin_method = c("quantile", "width"),
-                             scale_range = NULL, nsim = 50, seed = NULL) {
-  dat <- scaling_plot_data(object, bins, bin_method, scale_range, nsim, seed)
-  long <- rbind(
-    data.frame(scale_value = dat$scale_value, mean = dat$actual_observed_mean, series = "Actual observed mean"),
-    data.frame(scale_value = dat$scale_value, mean = dat$modeled_observed_mean, series = "Modeled observed mean"),
-    data.frame(scale_value = dat$scale_value, mean = dat$fitted_ground_up_mean, series = "Fitted ground-up mean")
-  )
-  ggplot2::ggplot(long, ggplot2::aes(x = scale_value, y = mean, colour = series, group = series)) +
+                             scale_range = NULL, nsim = 50, seed = NULL,
+                             x_breaks = NULL, x_text_angle = 0,
+                             x_text_size = 9, y_text_size = 9) {
+  long <- scaling_plot_data(object, bins, bin_method, scale_range, nsim, seed,
+                             output = "plot_ready")
+  p <- ggplot2::ggplot(long,
+      ggplot2::aes(x = scale_value, y = mean, colour = series, group = series)) +
     ggplot2::geom_line() + ggplot2::geom_point() +
     ggplot2::labs(x = object$columns$scale_by, y = "Mean severity", colour = NULL,
                   title = "Severity scaling diagnostic") + ggplot2::theme_minimal()
+  if (!is.null(x_breaks)) p <- p + ggplot2::scale_x_continuous(breaks = x_breaks)
+  .afd_plot_style(p, x_text_angle, x_text_size, y_text_size)
 }
 
 #' Diagnose fit within a severity layer

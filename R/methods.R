@@ -41,6 +41,7 @@ summary.actuarialfitdist_fit <- function(object, ...) {
   out
 }
 
+#' @export
 print.summary.actuarialfitdist_fit <- function(x, ...) {
   cat("Actuarial severity model summary\n\n")
   cat("Model: ", x$model, "\nDistribution: ", x$distribution, "\n", sep = "")

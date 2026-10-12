@@ -1,13 +1,31 @@
+# Cache row lookup for repeated deductible / scaling combinations. Parameter-
+# dependent CDFs are recomputed at each objective evaluation, but only once per
+# distinct term combination. Never approximate or round a claim's scale value.
+.afd_likelihood_groups <- function(deductible, limit, scale_by = NULL) {
+  n <- length(deductible)
+  key <- if (is.null(scale_by)) sprintf("%.17g", deductible) else
+    paste(sprintf("%.17g", deductible), sprintf("%.17g", scale_by), sep = "\r")
+  distinct <- unique(key)
+  if (length(distinct) > n * 0.7) return(list(index = NULL, first = NULL))
+  list(index = match(key, distinct), first = match(distinct, key))
+}
+
 # Likelihood calculations -------------------------------------------------
 
-.afd_single_components <- function(dist, params, x, deductible, limit, scale_by = NULL) {
+.afd_single_components <- function(dist, params, x, deductible, limit, scale_by = NULL, groups = NULL) {
   s <- if (is.null(scale_by)) rep(params$scale, length(x)) else .afd_scale_value(params, scale_by)
   if (length(s) == 1L) s <- rep(s, length(x))
   if (any(!is.finite(s)) || any(s <= 0)) return(NULL)
 
   shape_params <- params[setdiff(names(params), c("scale", "scale_coef", "scale_intercept"))]
   if (!.afd_valid_distribution_params(dist, shape_params)) return(NULL)
-  log_surv_d <- .afd_p(dist, deductible, s, shape_params, lower.tail = FALSE, log.p = TRUE)
+  if (!is.null(groups) && !is.null(groups$index)) {
+    log_surv_d <- .afd_p(dist, deductible[groups$first], s[groups$first],
+                         shape_params, lower.tail = FALSE, log.p = TRUE)[groups$index]
+  } else {
+    log_surv_d <- .afd_p(dist, deductible, s, shape_params,
+                         lower.tail = FALSE, log.p = TRUE)
+  }
   censored <- is.finite(limit) & x >= limit
   ll <- numeric(length(x))
   exact <- !censored
@@ -20,8 +38,8 @@
   list(loglik = ll, scale = s, censored = censored, shape_params = shape_params)
 }
 
-.afd_single_loglik <- function(dist, params, x, deductible, limit, weights, scale_by = NULL) {
-  z <- .afd_single_components(dist, params, x, deductible, limit, scale_by)
+.afd_single_loglik <- function(dist, params, x, deductible, limit, weights, scale_by = NULL, groups = NULL) {
+  z <- .afd_single_components(dist, params, x, deductible, limit, scale_by, groups)
   if (is.null(z) || any(!is.finite(z$loglik[weights > 0]))) return(-Inf)
   sum(weights[weights > 0] * z$loglik[weights > 0])
 }

@@ -20,7 +20,8 @@
 
 #' Limited expected severity
 #'
-#' Computes E[min(X, limit)] for positive ground-up severity X. For models
+#' Computes the expectation of `pmin(X, limit)` for positive ground-up
+#' severity `X`. For models
 #' fitted with a scaling variable, supply the corresponding `scale_value`.
 #'
 #' @param object A fitted model.
@@ -311,7 +312,8 @@ compare_factors <- function(object, metric = "rating_factor", ...) {
 
 #' Expected payment under deductible, limit, and valuation terms
 #'
-#' Computes E[min(max(v * X - d, 0), L)] where X is positive ground-up
+#' Computes the expectation of `pmin(pmax(v * X - d, 0), L)`,
+#' where `X` is positive ground-up
 #' severity, v is `valuation_factor`, d is `deductible`, and L is `limit`.
 #'
 #' @param object A fitted model.

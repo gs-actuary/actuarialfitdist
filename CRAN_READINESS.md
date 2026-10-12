@@ -1,55 +1,9 @@
-# CRAN-readiness review for 0.2.0 source
+# CRAN readiness — version 0.2.1
 
-## Documentation correction (post-check)
+**Not yet verified as CRAN-ready.** This revision was assembled and statically checked without a local R runtime. Run `devtools::document()`, `devtools::test()`, and `devtools::check(document = FALSE, args = "--as-cran")` in RStudio. In particular, check the new analytic plot data and fitted intercept recovery with `scale_intercept = TRUE`.
 
-The user reported 77 passing tests and an R CMD check with 0 errors,
-2 warnings and 1 note. All three messages concerned documentation.
-This archive fixes the roxygen2 source blocks and bundled Rd help files;
-it still **requires a fresh `devtools::document()` and `devtools::check()`**
-to verify that the generated documentation is warning- and note-free.
+Before submission, review DESCRIPTION metadata, package URL, licensing, example/vignette runtime, platform checks, and all `R CMD check` warnings/notes. The synthetic benchmark under `inst/benchmarks/` is optional and is not executed by the test suite. Keep proprietary datasets out of the repository.
 
+## R CMD check follow-up (2026-10-12)
 
-This ZIP is an editable source-tree snapshot, not a CRAN-checked binary or
-`R CMD build` output. The author should run the checks below in R 4.1+ with
-current dependencies installed. This environment has no R interpreter, so we
-**cannot** claim that `R CMD check --as-cran` passes, that roxygen-generated
-Rd files have been validated, or that timing regressions meet their targets.
-
-## On the author's R machine
-
-```r
-# install.packages(c("devtools", "roxygen2", "testthat", "scales", "knitr", "rmarkdown"))
-# Run in the folder containing DESCRIPTION:
-devtools::document()
-devtools::test()
-devtools::check(document = FALSE, args = "--as-cran")
-# Optional platform coverage: rhub::rhub_check() or CI on Windows/Linux/macOS.
-```
-
-```sh
-R CMD build actuarialfitdist
-R CMD check --as-cran actuarialfitdist_0.2.0.tar.gz
-```
-
-Do not submit until errors and warnings are resolved. Review any NOTES,
-especially examples/vignette runtime, Rd examples, non-ASCII, or method
-signatures. Regression testing includes exact formula checks for expected
-payments and spliced search behavior. The local machine should repeat the
-100 x 100 factor grid timing benchmark against the original version.
-
-## Statistical review before release
-
-* `loss` is a **ground-up** severity and not net payment/ACV. Fitting `limit`
-  is a **ground-up censoring threshold**. Factor-generation `limit` is a
-  **payment cap after deductible**. Avoid conflating them.
-* Above-limit rows are excluded by default (not silently treated as censored).
-  Out-of-contract payments require analyst assessment. Censored-at-limit
-  observations remain in the likelihood as right-censored data.
-* Search thresholds are empirical quantiles of observed/censored losses.
-  Pileups at limits yield duplicate thresholds. Min exact-tail count defaults
-  to 25; flagged extreme tail scales/shapes still require actuarial judgment.
-* Performance optimization uses analytic LEV for four families; all other
-  families/splices use numerical quadrature and may remain slower on large
-  Cartesian grids. This is a remaining optimization opportunity.
-* Automatic exclusion changes sample composition. Audit original positions
-  and reasons before accepting a model in production.
+The last reported Windows check was 0 errors, 1 WARNING, 1 NOTE. The remaining issues were Rd markdown links caused by `E[...]`, unqualified `head` and `tail`, and ggplot aesthetic variables. This archive addresses these at the R source and checked-in manual page level. The updated check has not yet been executed in this environment; rerun `devtools::document(); devtools::test(); devtools::check(document = FALSE, args = "--as-cran")`.

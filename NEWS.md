@@ -1,3 +1,18 @@
+# actuarialfitdist 0.2.1
+
+* Corrected roxygen2 help text so mathematical expressions are not interpreted as cross-reference links. Qualified utils::head/tail and made ggplot data-mask references explicit for clean R CMD check.
+
+* Corrected invalid reserved-word argument names in all-fixed-parameter fitting branches in `fit_severity()` and `fit_spliced_severity()`.
+
+* Automatic numerical `parscale` for estimated scale intercepts; explicit optimizer overrides preserved, including in spliced models.
+* Candidate comparison now includes individual runtimes, optimizer evaluation counts and convergence codes.
+* Reuse repeated deductible/scaling term probabilities within each ordinary likelihood evaluation.
+* Candidate and single-fit plots default to deterministic censoring/truncation-aware bin/CDF summaries rather than simulating large portfolios. `method = "simulation"` retains the previous option.
+* `fit_plot_data()` and `candidate_plot_data()` support `output = "plot_ready"`; `scaling_plot_data()` exposes the exact long plot data.
+* User-facing plot axis-label sizes, angles and explicit tick breaks; 45-degree tick rotation for faceted candidates.
+* Exact rejection simulation for inverse Gaussian draws conditional on a deductible, avoiding most per-row inverse-CDF root searches.
+* New regression tests and documented benchmark script; updated README/vignette/examples.
+
 # actuarialfitdist 0.2.0 (development)
 
 * Documentation-only CRAN check cleanup: unique S3 aliases, correct plotting
@@ -20,3 +35,7 @@
 * Supports optional linear severity scaling, likelihood weights, fixed parameters, candidate comparison, and spliced body-tail models.
 * Generates limited expected severities, LERs, ILFs, deductible factors, combined rating factors, and valuation-adjusted expected payments.
 * Includes simulation-based goodness-of-fit diagnostics, scaling diagnostics, layer diagnostics, Hessian inference, and basic bootstrap support.
+
+* 0.2.1 source maintenance: resolved candidate plotting default argument
+  handling within `lapply()` and consolidated roxygen2 source-of-truth
+  maintenance for help pages, NAMESPACE, package docs, and S3 print registration.

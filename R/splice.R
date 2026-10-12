@@ -41,6 +41,7 @@
   }
   spec <- .afd_splice_spec(body, tail, x, z, scale_intercept, threshold)
   packed <- .afd_pack_parameters(spec, .afd_flatten_splice_fixed(fixed))
+  optim_control <- .afd_optimizer_control(control, packed$unknown, x, maxit = 3000L)
   objective <- function(opt) {
     params <- packed$decode(opt)
     ll <- .afd_splice_loglik(body, tail, threshold, params, x, d, u, w, z)
@@ -50,12 +51,14 @@
   if (length(packed$start)) {
     opt <- stats::optim(
       packed$start, objective, method = "BFGS",
-      control = utils::modifyList(list(maxit = 3000, reltol = 1e-10), control)
+      control = optim_control
     )
     optim_par <- opt$par; convergence <- opt$convergence; message <- opt$message; value <- opt$value
+    optim_counts <- opt$counts
   } else {
     optim_par <- numeric(); convergence <- 0L
     message <- "All parameters fixed; no optimization performed."; value <- objective(numeric())
+    optim_counts <- c("function" = 0L, gradient = 0L)
   }
   params <- packed$decode(optim_par)
   comp <- .afd_splice_components(body, tail, threshold, params, x, d, u, z)
@@ -63,7 +66,7 @@
 
   H <- Vopt <- Vnat <- NULL
   if (isTRUE(hessian) && length(optim_par) && convergence == 0L) {
-    H <- .afd_num_hessian(objective, optim_par)
+    H <- .afd_num_hessian(objective, optim_par, parscale = optim_control$parscale)
     Vopt <- .afd_safe_inverse(H)
     if (!is.null(Vopt)) {
       all_names <- names(spec)
@@ -85,6 +88,7 @@
     BIC = log(max(n_eff, 1)) * k + 2 * value,
     convergence = convergence, message = message,
     optim_par = optim_par, npar = k, hessian = H, vcov = Vnat,
+    optimizer_counts = optim_counts, optimizer_control = optim_control,
     loglik_contributions = comp$loglik, n_censored = sum(comp$censored & w > 0)
   )
 }

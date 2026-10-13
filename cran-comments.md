@@ -1,13 +1,14 @@
-## Release status
+## Submission status
 
-Version 0.2.2 is a **development candidate, not submitted to CRAN**.
+First submission candidate: actuarialfitdist 0.2.3.
 
-The latest user-run `R CMD check --as-cran` of 0.2.1 produced 0 errors, 1 warning, 1 note before its documentation/static-check corrections. The numerical revisions in 0.2.2 have NOT yet been executed through an R test suite or an R CMD check in the producing environment. Run these before any CRAN submission:
+## R CMD check results
 
-```r
-devtools::document()
-devtools::test()
-devtools::check(document = FALSE, args = "--as-cran")
-```
+**Pending**: replace this paragraph with the results of the final local and
+remote checks on the exact 0.2.3 tarball before submission. Do not report the
+previous 0.2.1 or 0.2.2 check results as though they apply to this version.
 
-See `CRAN_READINESS.md` for remaining validation and statistical caveats.
+## Notes
+
+This would be the package's first CRAN submission. Report any non-standard
+NOTEs and their justification here after running final checks.

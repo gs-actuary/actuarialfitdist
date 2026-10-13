@@ -122,7 +122,8 @@
 #' @param object A fitted actuarialfitdist model.
 #' @param p Probability or vector of probabilities.
 #' @param scale_value Optional scaling value for a model fitted with `scale_by`.
-#' @return Numeric vector of ground-up severity quantiles.
+#' @return Numeric vector of fitted positive ground-up
+#'     severity quantiles at probabilities `p`, in the original loss units.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -142,7 +143,8 @@ severity_quantile <- function(object, p, scale_value = NULL) {
 #' @param object A fitted actuarialfitdist model.
 #' @param threshold Ground-up severity threshold.
 #' @param scale_value Optional scaling value for a model fitted with `scale_by`.
-#' @return Probability that severity exceeds the threshold.
+#' @return Numeric vector of fitted probabilities that
+#'     positive ground-up severity exceeds each `threshold`.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))

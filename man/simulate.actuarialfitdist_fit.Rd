@@ -35,9 +35,11 @@ number of rows in \code{newdata}.}
 \item{...}{Unused.}
 }
 \value{
-Data frame containing observed or ground-up simulated loss amounts.
-For \code{type = "observed"}, the data reflect the original row-specific
-deductible truncation and limit censoring mechanism.
+A data frame. In \code{type = "observed"}, rows
+contain \code{row}, \code{simulation}, \code{observed_loss}, \code{censored}, \code{deductible},
+\code{limit}, and \code{scale_value} after reproducing each row's observation
+mechanism. In \code{type = "ground_up"}, rows contain \code{simulation},
+\code{ground_up}, and \code{scale_value} without censoring or truncation.
 }
 \description{
 Simulates either positive ground-up severities or the observed claims that

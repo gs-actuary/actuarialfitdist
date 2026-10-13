@@ -26,8 +26,10 @@ replicate should repeat threshold search. Default \code{FALSE} reuses the
 selected threshold to keep the bootstrap inexpensive and stable.}
 }
 \value{
-An object of class \code{actuarialfitdist_bootstrap} containing coefficient
-estimates and convergence status by replicate.
+An \code{actuarialfitdist_bootstrap} list containing \code{estimates}
+(one row per replicate, including coefficients, convergence and any error),
+\code{success_rate}, \code{R}, \code{type}, and \code{original} (the input fit). Inspect failures
+before using the empirical distribution of bootstrap estimates.
 }
 \description{
 Provides a deliberately lightweight bootstrap. Parametric bootstrap retains

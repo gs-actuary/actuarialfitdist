@@ -14,7 +14,8 @@ exceedance_probability(object, threshold, scale_value = NULL)
 \item{scale_value}{Optional scaling value for a model fitted with \code{scale_by}.}
 }
 \value{
-Probability that severity exceeds the threshold.
+Numeric vector of fitted probabilities that
+positive ground-up severity exceeds each \code{threshold}.
 }
 \description{
 Returns fitted ground-up probabilities of exceeding specified severity

@@ -14,7 +14,9 @@ compare_factors(object, metric = "rating_factor", ...)
 \item{...}{Arguments passed to \code{severity_factors()}.}
 }
 \value{
-Wide data frame with one column per candidate distribution.
+A wide data frame with the coverage scenario columns
+used by \code{severity_factors()} and one \verb{value.<distribution>} column for
+each successful candidate, for the chosen \code{metric}.
 }
 \description{
 Evaluates the same rating scenarios for each successful candidate fit and

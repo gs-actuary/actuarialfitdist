@@ -27,7 +27,11 @@ diagnose_fit(
 \item{seed}{Optional random seed.}
 }
 \value{
-A data frame comparing actual and simulated behavior in the layer.
+A data frame with one row for actual and one for simulated
+observed claims. Columns include \code{source}, \code{rows}, \code{layer_count},
+\code{layer_proportion}, \code{layer_mean}, and \code{censoring_rate}. Simulated counts are
+averaged over replicates; results reflect observed (possibly censored)
+severity, not uncensored ground-up losses.
 }
 \description{
 Compares actual and simulated claim behavior within a user-selected observed

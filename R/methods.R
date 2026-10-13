@@ -1,3 +1,33 @@
+#' Inspect fitted actuarial severity models
+#'
+#' These standard R methods display model results and provide access to
+#' coefficients, log-likelihood, information criteria and (when available)
+#' the estimated covariance matrix and confidence intervals. `summary()`
+#' gives natural-scale estimates and their standard errors. A Hessian-based
+#' variance estimate can be unavailable for numerically difficult fits; in
+#' that case `vcov()` and `confint()` require a successful refit with
+#' `hessian = TRUE`.
+#'
+#' `plot(fit)` calls `plot_fit(fit)`. See
+#' `?predict.actuarialfitdist_fit` and
+#' `?simulate.actuarialfitdist_fit` for prediction and simulation.
+#'
+#' @name actuarialfitdist_fit_methods
+#' @aliases print.actuarialfitdist_fit summary.actuarialfitdist_fit
+#' @aliases print.summary.actuarialfitdist_fit coef.actuarialfitdist_fit
+#' @aliases vcov.actuarialfitdist_fit logLik.actuarialfitdist_fit
+#' @aliases AIC.actuarialfitdist_fit BIC.actuarialfitdist_fit
+#' @aliases confint.actuarialfitdist_fit plot.actuarialfitdist_fit
+#' @aliases print.actuarialfitdist_candidates
+#' @examples
+#' set.seed(1)
+#' d <- data.frame(loss = rlnorm(150, 9, 0.8))
+#' fit <- fit_severity(d, "loss", hessian = FALSE)
+#' summary(fit)
+#' coef(fit)
+#' logLik(fit)
+NULL
+
 # S3 methods --------------------------------------------------------------
 
 #' @export
@@ -109,9 +139,10 @@ print.actuarialfitdist_candidates <- function(x, ...) {
 #' @param p Probability for quantiles.
 #' @param x Severity value for CDF, survival, or density predictions.
 #' @param ... Unused.
-#' @return Numeric vector of fitted ground-up quantities. For `type = "mean"`
-#'   or `"quantile"` the unit is severity; for `"survival"` or `"cdf"`
-#'   values are probabilities. For `"density"` values are densities.
+#' @return Numeric fitted values. Means and
+#'     quantiles are in ground-up severity units; survival and CDF results are
+#'     probabilities, and density results are probability densities. Results
+#'     are conditional on positive ground-up severity.
 #' @examples
 #' set.seed(1)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))

@@ -39,8 +39,9 @@ plot_scaling_fit(
 \item{y_text_size}{Size of the mean-severity-axis tick labels.}
 }
 \value{
-A ggplot showing actual and modeled observed means by scale bin, plus
-the fitted ground-up mean relationship.
+A \code{ggplot2} object showing observed means, simulated
+observed means, and fitted ground-up means by scaling-variable bin. The
+plotted data can be obtained with \code{scaling_plot_data(output = "plot_ready")}.
 }
 \description{
 Compares empirical observed mean severity by scale bin with simulated

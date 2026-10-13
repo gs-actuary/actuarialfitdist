@@ -14,7 +14,8 @@ severity_quantile(object, p, scale_value = NULL)
 \item{scale_value}{Optional scaling value for a model fitted with \code{scale_by}.}
 }
 \value{
-Numeric vector of ground-up severity quantiles.
+Numeric vector of fitted positive ground-up
+severity quantiles at probabilities \code{p}, in the original loss units.
 }
 \description{
 Returns ground-up severity quantiles implied by a fitted single-family or

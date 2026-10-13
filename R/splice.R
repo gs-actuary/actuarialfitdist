@@ -105,6 +105,10 @@
 #' left truncation and limits define right censoring.
 #'
 #' @inheritParams fit_severity
+#' @param scale_by Optional character scalar naming a numeric variable (such
+#'   as Coverage A) that scales the body and tail family parameters. Because
+#'   the splice threshold is in absolute severity units, a spliced model's
+#'   overall mean need not be exactly proportional to the scaling variable.
 #' @param body Distribution family used below the splice threshold.
 #' @param tail Distribution family used above the splice threshold.
 #' @param threshold Numeric threshold for `threshold_method = "fixed"`. For
@@ -118,8 +122,12 @@
 #'   Candidates failing this condition are skipped and described in `threshold_search`.
 #' @param fixed Optional list. Use `body = list(...)`, `tail = list(...)`, and
 #'   optionally `splice_prob = ...` to fix parameters.
-#' @return An `actuarialfitdist_fit` object. Search fits also contain a
-#'   `threshold_search` data frame.
+#' @return An `actuarialfitdist_fit` object with body and tail
+#'     coefficients, fitted splice probability, chosen `threshold`, fit statistics,
+#'     and the excluded-row audit. If `threshold_method = "search"`,
+#'     `threshold_search` records attempted thresholds, exact uncensored tail counts,
+#'     convergence, fit statistics, and reasons for rejecting candidates. A
+#'     successful optimizer code does not guarantee a stable extrapolated tail.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))

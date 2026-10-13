@@ -37,7 +37,14 @@ severity_factors(
 \code{"paired"} recycles vectors to matching scenario rows.}
 }
 \value{
-Long-format data frame.
+A long-format data frame with one row per coverage
+scenario and successful distribution. Columns include \code{distribution},
+\code{model}, \code{scale_value}, \code{deductible}, \code{limit}, \code{valuation_factor},
+\code{expected_payment}, \code{limited_expected_severity}, \code{unlimited_mean}, \code{LER},
+\code{ILF}, \code{rating_factor}, and the three \verb{base_*} assumptions. A value can be
+\code{NA} when the relevant expectation or denominator does not exist. With
+\code{grid = "cross"}, input vectors form a Cartesian product; with \code{"paired"},
+they form positionally matched scenarios.
 }
 \description{
 Takes either one fitted severity model or a candidate-comparison object to
@@ -52,6 +59,15 @@ adjustment to ground-up replacement-cost severity before the deductible and
 limit. Fitting remains agnostic to depreciation: historical losses must have
 already been placed on the analyst's chosen ground-up basis.
 }
+\section{What the factor limit means}{
+
+Here \code{limit} is the maximum \strong{payment after applying the deductible}.
+It is not the ground-up censoring threshold in \code{fit_severity()}.
+\code{rating_factor} compares each scenario's expected payment against the
+supplied base deductible, limit and valuation terms. \code{grid = "cross"}
+can create many scenarios when several input vectors are long.
+}
+
 \examples{
 set.seed(123)
 d <- data.frame(loss = rlnorm(120, log(10000), 0.8))

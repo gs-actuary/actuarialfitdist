@@ -81,9 +81,11 @@
 #'   number of rows in `newdata`.
 #' @param scale_value Optional scale values for ground-up simulation.
 #' @param ... Unused.
-#' @return Data frame containing observed or ground-up simulated loss amounts.
-#'   For `type = "observed"`, the data reflect the original row-specific
-#'   deductible truncation and limit censoring mechanism.
+#' @return A data frame. In `type = "observed"`, rows
+#'     contain `row`, `simulation`, `observed_loss`, `censored`, `deductible`,
+#'     `limit`, and `scale_value` after reproducing each row's observation
+#'     mechanism. In `type = "ground_up"`, rows contain `simulation`,
+#'     `ground_up`, and `scale_value` without censoring or truncation.
 #' @examples
 #' set.seed(1)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))

@@ -29,7 +29,8 @@ plot_candidate_fits(
 
 \item{scale_range}{Optional scale-by filter.}
 
-\item{nsim}{Observed-portfolio simulations per model.}
+\item{nsim}{Number of simulated portfolios when \code{method = "simulation"};
+ignored by the deterministic analytic default.}
 
 \item{seed}{Random seed.}
 
@@ -55,19 +56,30 @@ probabilities; \code{"simulation"} uses the older row-level simulation.}
 \item{y_text_size}{Vertical-axis tick font size in points.}
 }
 \value{
-ggplot object. \code{candidate_plot_data(output = "plot_ready", ...)}
-returns the exact data used by the default plot.
+A \code{ggplot2} plot, faceted by distribution unless
+\code{facet = FALSE}. Only successfully fitted candidates are plotted. The
+default is analytic (deterministic); \code{candidate_plot_data(output = "plot_ready")} returns the exact plotting values for custom charts.
 }
 \description{
-Facets or overlays empirical and simulated observed severity histograms,
-densities, CDFs or survival curves. Uses a shared log10 axis by default.
+Facets or overlays observed severity against modeled severity histograms,
+densities, CDFs or survival curves. The default uses expected probabilities,
+not random simulations. Uses a shared log10 axis by default.
 Fitted comparisons reproduce the observation mechanism, not unconditional
 ground-up densities. Returned ggplot can be customized.
 }
+\section{Interpretation}{
+
+Analytic curves compare the empirical \strong{observed} severity distribution
+to the fitted distribution after the same observation rules. They are not
+unconditional ground-up density curves. \code{nsim} and \code{seed} affect only
+\code{method = "simulation"}. Models that fail fitting are omitted, and their
+errors remain in \code{object$comparison}.
+}
+
 \examples{
 set.seed(2)
 d <- data.frame(loss = rlnorm(150, log(9000), 0.9))
 fits <- fit_severity_candidates(d, "loss",
   distributions = c("lognormal", "weibull"), hessian = FALSE)
-plot_candidate_fits(fits, nsim = 1, seed = 1)
+plot_candidate_fits(fits)
 }

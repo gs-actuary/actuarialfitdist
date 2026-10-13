@@ -65,7 +65,14 @@ Anomalies include ground-up loss at/below deductible and above a finite
 censoring limit; investigate the valuation basis before fitting.}
 }
 \value{
-An object of class \code{actuarialfitdist_fit}.
+An \code{actuarialfitdist_fit} object. Important components include
+\code{coefficients} (named estimates on their natural scales), \code{logLik}, \code{AIC},
+\code{BIC}, \code{convergence}, and \code{optimizer_counts}. \code{data} contains the retained
+observations; \code{excluded_rows} records original row positions excluded during
+validation, and \code{excluded_details} explains why. \code{vcov} is a covariance
+matrix when it can be estimated (\code{hessian = TRUE}); otherwise it is \code{NULL}.
+\code{convergence = 0} is an optimizer diagnostic, not proof that the chosen
+distribution adequately describes the claim tail.
 }
 \description{
 Fits a parametric severity distribution to ground-up insurance losses using
@@ -80,6 +87,16 @@ basis. It must not contain insurer payments, losses net of deductible,
 excess-of-deductible amounts, or ACV/depreciated payments unless the analyst
 has first converted those observations to the intended ground-up basis.
 The package deliberately does not guess or reconstruct this basis.
+}
+
+\section{Observation mechanism versus payment factors}{
+
+For fitting, \code{deductible} and \code{limit} are \strong{column names} giving each
+claim's left-truncation threshold and \emph{ground-up censoring threshold}.
+A claim recorded exactly at its finite limit is right-censored. In
+\code{expected_payment()} and \code{severity_factors()}, \code{limit} instead means a
+\strong{post-deductible insurer payment cap}, supplied as an amount. These
+definitions must not be interchanged.
 }
 
 \examples{

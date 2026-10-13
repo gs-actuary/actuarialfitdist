@@ -1,4 +1,4 @@
-#' actuarialfitdist: Actuarial Severity Distribution Fitting and Rating Factors
+#' actuarialfitdist: Actuarial Severity Fitting with Limits and Deductibles
 #'
 #' Fits severity distributions to ground-up insurance losses with deductible
 #' truncation and limit censoring, then carries fitted models through to limited
@@ -9,6 +9,12 @@
 #' a consistent valuation basis. Do not supply insurer payments, net-of-
 #' deductible amounts, excess losses, or depreciated ACV payments unless the
 #' analyst has first transformed them to the intended ground-up basis.
+#'
+#' @section Documentation and first steps:
+#' Start with `vignette("actuarialfitdist")` for a worked example and
+#' `vignette("candidate-comparisons")` for model comparison, plotting,
+#' and conversion to rating factors. See `?fit_severity` and
+#' `?severity_factors` for the different meanings of a policy-limit input.
 #'
 #' @section Supported families:
 #' Weibull, gamma, lognormal, Pareto II/Lomax, Burr XII, normal, exponential,

@@ -4,7 +4,7 @@
 \name{actuarialfitdist-package}
 \alias{actuarialfitdist}
 \alias{actuarialfitdist-package}
-\title{actuarialfitdist: Actuarial Severity Distribution Fitting and Rating Factors}
+\title{actuarialfitdist: Actuarial Severity Fitting with Limits and Deductibles}
 \description{
 Fits severity distributions to ground-up insurance losses with deductible
 truncation and limit censoring, then carries fitted models through to limited
@@ -16,6 +16,14 @@ The core fitting functions assume the \code{loss} column is ground-up severity o
 a consistent valuation basis. Do not supply insurer payments, net-of-
 deductible amounts, excess losses, or depreciated ACV payments unless the
 analyst has first transformed them to the intended ground-up basis.
+}
+
+\section{Documentation and first steps}{
+
+Start with \code{vignette("actuarialfitdist")} for a worked example and
+\code{vignette("candidate-comparisons")} for model comparison, plotting,
+and conversion to rating factors. See \code{?fit_severity} and
+\code{?severity_factors} for the different meanings of a policy-limit input.
 }
 
 \section{Supported families}{

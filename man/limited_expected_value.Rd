@@ -14,7 +14,9 @@ limited_expected_value(object, limit, scale_value = NULL)
 \item{scale_value}{Optional scaling value.}
 }
 \value{
-Numeric limited expected severity.
+Numeric vector of expected ground-up severity
+limited at each supplied \code{limit}, in the same currency units as the loss
+data. \code{Inf} requests the unlimited mean when it exists.
 }
 \description{
 Computes the expectation of \code{pmin(X, limit)} for positive ground-up

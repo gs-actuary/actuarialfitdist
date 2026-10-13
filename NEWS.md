@@ -1,3 +1,12 @@
+# actuarialfitdist 0.2.3 (CRAN documentation candidate)
+
+* Shorten the package title and add a standard loss-modeling reference in DESCRIPTION.
+* Rewrite help-page return-value descriptions and important argument explanations.
+* Clarify ground-up observation censoring versus post-deductible payment caps.
+* Document deterministic analytic plotting as the default and simulation as optional.
+* Add installation instructions and a reproducible release-check procedure.
+* **No changes to likelihood, optimization, plotting, or factor-calculation code.**
+
 # actuarialfitdist 0.2.2 (numerical-stability update)
 
 * Fit a zero-intercept nested anchor before estimating a free scaling intercept. Reject an apparently converged free-intercept fit if its log likelihood is materially worse than the nested solution.

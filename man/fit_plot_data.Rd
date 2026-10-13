@@ -44,7 +44,14 @@ and \code{upper}. \code{value} is probability density in the displayed x coordin
 are computed relative to the complete selected portfolio.}
 }
 \value{
-Data frame of actual/simulated claim records or plot-ready summaries.
+A data frame. For \code{output = "raw"}, each selected original
+claim and each simulated replicate has \code{row}, \code{source}, \code{simulation},
+\code{observed_loss}, \code{censored}, \code{deductible}, \code{limit}, \code{scale_value}, and \code{weight}.
+For \code{output = "plot_ready"}, columns \code{source}, \code{x}, \code{value}, \code{lower}, and
+\code{upper} give the deterministic observed and modeled values used in analytic
+plots. Histograms/densities use density per displayed coordinate (per
+log10-severity unit when \code{x_scale = "log10"}); CDF/survival values are
+probabilities. The analytic output does not depend on \code{nsim} or \code{seed}.
 }
 \description{
 Produces a censoring- and truncation-aware comparison data set. Modeled

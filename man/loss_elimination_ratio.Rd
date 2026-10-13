@@ -21,7 +21,10 @@ loss_elimination_ratio(
 \item{valuation_factor}{Multiplicative valuation factor applied before the deductible.}
 }
 \value{
-Numeric LER.
+Numeric vector of loss elimination ratios:
+one minus expected post-deductible payment divided by expected payment
+without a deductible, holding the valuation factor fixed. Returns \code{NA}
+when the denominator is not finite and positive.
 }
 \description{
 Calculates one minus the expected payment after deductible divided by the

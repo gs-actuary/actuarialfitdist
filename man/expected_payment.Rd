@@ -25,7 +25,11 @@ expected_payment(
 to ground-up severity before deductible and limit.}
 }
 \value{
-Numeric expected payment(s).
+Numeric vector of expected insurer payments,
+in loss currency units, calculated as the expectation of
+\code{pmin(pmax(valuation_factor * X - deductible, 0), limit)} for positive
+ground-up severity \code{X}. Here \code{limit} is a payment cap \emph{after} deductible,
+not the ground-up observation censoring limit used while fitting.
 }
 \description{
 Computes the expectation of \code{pmin(pmax(v * X - d, 0), L)},

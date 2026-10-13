@@ -33,7 +33,14 @@
 #' @param x_scale `"log10"` or `"linear"` for plot-ready summaries.
 #' @param xlim Optional grid interval. Unlike data filtering, the probabilities
 #'   are computed relative to the complete selected portfolio.
-#' @return Data frame of actual/simulated claim records or plot-ready summaries.
+#' @return A data frame. For `output = "raw"`, each selected original
+#'     claim and each simulated replicate has `row`, `source`, `simulation`,
+#'     `observed_loss`, `censored`, `deductible`, `limit`, `scale_value`, and `weight`.
+#'     For `output = "plot_ready"`, columns `source`, `x`, `value`, `lower`, and
+#'     `upper` give the deterministic observed and modeled values used in analytic
+#'     plots. Histograms/densities use density per displayed coordinate (per
+#'     log10-severity unit when `x_scale = "log10"`); CDF/survival values are
+#'     probabilities. The analytic output does not depend on `nsim` or `seed`.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -130,6 +137,12 @@ fit_plot_data <- function(object, scale_range = NULL, nsim = 20, seed = NULL,
 #' computes density in log-severity coordinates, ensuring simulated and
 #' observed bars use the same normalization. Axis limits only zoom the view.
 #'
+#' @section Analytic versus simulation plots:
+#' `method = "analytic"` (the default) calculates expected observed-claim
+#' probabilities across the actual mix of deductibles, limits, and scaling
+#' values. It is deterministic and ignores `nsim` and `seed`. Use
+#' `method = "simulation"` when you want to see Monte Carlo variability;
+#' `nsim` controls the number of simulated portfolios in that mode.
 #' @inheritParams fit_plot_data
 #' @param type `"histogram"`, `"density"`, `"cdf"`, or `"survival"`.
 #' @param bins Number of histogram bins.
@@ -143,13 +156,16 @@ fit_plot_data <- function(object, scale_range = NULL, nsim = 20, seed = NULL,
 #' @param x_text_size Horizontal-axis tick label font size in points.
 #' @param y_text_size Vertical-axis tick label font size in points.
 #' @param points Number of intervals for analytic density and CDF summaries.
-#' @return ggplot object. Use `fit_plot_data(output = "plot_ready", ...)`
-#'   to get the exact analytic plot data.
+#' @return A `ggplot2` plot comparing observed severity with modeled
+#'     observations on the same deductible, limit and scaling basis. The default
+#'     analytic method uses deterministic expected probabilities; choose
+#'     `method = "simulation"` for a Monte Carlo comparison. To customize the
+#'     underlying analytic values, use `fit_plot_data(output = "plot_ready")`.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
 #' fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
-#' plot_fit(fit, x_scale = "log10", nsim = 1, seed = 1)
+#' plot_fit(fit, x_scale = "log10")
 #' @export
 plot_fit <- function(object, type = c("histogram", "density", "cdf", "survival"),
                      scale_range = NULL, nsim = 20, seed = NULL, bins = 30,
@@ -218,8 +234,12 @@ plot_fit <- function(object, type = c("histogram", "density", "cdf", "survival")
 #' @param points Density/CDF grid intervals.
 #' @param x_scale `"log10"` (default) or `"linear"` plot coordinate.
 #' @param xlim Optional plot-ready grid range; not a claim filter.
-#' @return Data frame including `distribution`, `source`, `x`, `value`,
-#'   `lower`, `upper` for plot-ready output; raw output preserves observed losses.
+#' @return A data frame with a `distribution` column for each
+#'     successful candidate. `output = "raw"` returns actual and simulated
+#'     claim-level observations with `observed_loss`, censoring flags and weights.
+#'     `output = "plot_ready"` returns `source`, `x`, `value`, `lower`, `upper`, and
+#'     `distribution`, matching the default candidate plot; `source = "modeled"`
+#'     denotes expected portfolio probabilities, not Monte Carlo simulations.
 #' @examples
 #' set.seed(11)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -297,15 +317,23 @@ candidate_plot_data <- function(object, scale_range = NULL, nsim = 3, seed = NUL
 
 #' Compare observed and fitted severity across candidate distributions
 #'
-#' Facets or overlays empirical and simulated observed severity histograms,
-#' densities, CDFs or survival curves. Uses a shared log10 axis by default.
+#' Facets or overlays observed severity against modeled severity histograms,
+#' densities, CDFs or survival curves. The default uses expected probabilities,
+#' not random simulations. Uses a shared log10 axis by default.
 #' Fitted comparisons reproduce the observation mechanism, not unconditional
 #' ground-up densities. Returned ggplot can be customized.
 #'
+#' @section Interpretation:
+#' Analytic curves compare the empirical **observed** severity distribution
+#' to the fitted distribution after the same observation rules. They are not
+#' unconditional ground-up density curves. `nsim` and `seed` affect only
+#' `method = "simulation"`. Models that fail fitting are omitted, and their
+#' errors remain in `object$comparison`.
 #' @param object Result of `fit_severity_candidates()`.
 #' @param type Plot type: `"histogram"`, `"density"`, `"cdf"`, or `"survival"`.
 #' @param scale_range Optional scale-by filter.
-#' @param nsim Observed-portfolio simulations per model.
+#' @param nsim Number of simulated portfolios when `method = "simulation"`;
+#'   ignored by the deterministic analytic default.
 #' @param seed Random seed.
 #' @param bins Histogram bins.
 #' @param x_scale `"log10"` (default) or `"linear"`.
@@ -318,14 +346,16 @@ candidate_plot_data <- function(object, scale_range = NULL, nsim = 3, seed = NUL
 #' @param x_text_angle Axis label rotation (degrees); defaults to 45 in facets.
 #' @param x_text_size Horizontal-axis tick font size in points.
 #' @param y_text_size Vertical-axis tick font size in points.
-#' @return ggplot object. `candidate_plot_data(output = "plot_ready", ...)`
-#'   returns the exact data used by the default plot.
+#' @return A `ggplot2` plot, faceted by distribution unless
+#'     `facet = FALSE`. Only successfully fitted candidates are plotted. The
+#'     default is analytic (deterministic); `candidate_plot_data(output =
+#'     "plot_ready")` returns the exact plotting values for custom charts.
 #' @examples
 #' set.seed(2)
 #' d <- data.frame(loss = rlnorm(150, log(9000), 0.9))
 #' fits <- fit_severity_candidates(d, "loss",
 #'   distributions = c("lognormal", "weibull"), hessian = FALSE)
-#' plot_candidate_fits(fits, nsim = 1, seed = 1)
+#' plot_candidate_fits(fits)
 #' @export
 plot_candidate_fits <- function(object, type = c("histogram", "density", "cdf", "survival"),
                                 scale_range = NULL, nsim = 3, seed = NULL,
@@ -409,7 +439,12 @@ plot_candidate_fits <- function(object, type = c("histogram", "density", "cdf", 
 #' @param seed Optional random seed.
 #' @param output `"wide"` (default) returns summary columns; `"plot_ready"`
 #'   returns the exact long data used by `plot_scaling_fit()`.
-#' @return Data frame with one row per scale bin or a long plot-ready data frame.
+#' @return A data frame with scale bins. For `output = "wide"`,
+#'     columns include `bin`, `scale_value`, `n`, `actual_observed_mean`,
+#'     `modeled_observed_mean`, and `fitted_ground_up_mean`. For
+#'     `output = "plot_ready"`, columns `bin`, `scale_value`, `mean`, and `series`
+#'     give the exact long-format data used by `plot_scaling_fit()`. Observed and
+#'     modeled observed means incorporate policy terms; the ground-up mean does not.
 #' @examples
 #' set.seed(2)
 #' d <- data.frame(cov_a = rep(c(200000, 400000, 600000), each = 80))
@@ -481,8 +516,10 @@ scaling_plot_data <- function(object, bins = 10, bin_method = c("quantile", "wid
 #' @param x_text_angle Rotation of the scale-axis labels in degrees.
 #' @param x_text_size Size of the scale-axis tick labels.
 #' @param y_text_size Size of the mean-severity-axis tick labels.
-#' @return A ggplot showing actual and modeled observed means by scale bin, plus
-#'   the fitted ground-up mean relationship.
+#' @return A `ggplot2` object showing observed means, simulated
+#'     observed means, and fitted ground-up means by scaling-variable bin. The
+#'     plotted data can be obtained with `scaling_plot_data(output =
+#'     "plot_ready")`.
 #' @examples
 #' set.seed(2)
 #' d <- data.frame(cov_a = rep(c(200000, 400000, 600000), each = 80))
@@ -516,7 +553,11 @@ plot_scaling_fit <- function(object, bins = 10, bin_method = c("quantile", "widt
 #' @param scale_range Optional range of scaling values.
 #' @param nsim Number of simulated observed portfolios.
 #' @param seed Optional random seed.
-#' @return A data frame comparing actual and simulated behavior in the layer.
+#' @return A data frame with one row for actual and one for simulated
+#'     observed claims. Columns include `source`, `rows`, `layer_count`,
+#'     `layer_proportion`, `layer_mean`, and `censoring_rate`. Simulated counts are
+#'     averaged over replicates; results reflect observed (possibly censored)
+#'     severity, not uncensored ground-up losses.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))

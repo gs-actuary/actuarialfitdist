@@ -200,9 +200,7 @@ A severity histogram across the entire Coverage A range is not a comparison to o
 plot_fit(
   home_fit,
   type = "density",
-  scale_range = c(300000, 450000),
-  nsim = 3,
-  seed = 11
+  scale_range = c(300000, 450000)
 )
 ```
 
@@ -369,7 +367,7 @@ no_terms <- data.frame(loss = rlnorm(250, log(12000), .8))
 fit_no_terms <- fit_severity(no_terms, loss = "loss",
   distribution = "lognormal", hessian = FALSE)
 print(fit_no_terms)
-plot_fit(fit_no_terms, x_scale = "log10", nsim = 2, seed = 11,
+plot_fit(fit_no_terms, x_scale = "log10",
   xlim = c(1000, 100000))
 ```
 
@@ -393,6 +391,6 @@ default; `xlim` zooms without discarding data during statistic calculation.
 The histogram density is computed in log-severity coordinates when log-scaled.
 
 ```{r candidate-comparison-plot, fig.width=8, fig.height=4}
-plot_candidate_fits(pd_candidates, type = "density", nsim = 2, seed = 11,
+plot_candidate_fits(pd_candidates, type = "density",
   x_scale = "log10", xlim = c(200, 150000))
 ```

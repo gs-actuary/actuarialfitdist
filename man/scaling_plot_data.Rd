@@ -31,7 +31,12 @@ scaling_plot_data(
 returns the exact long data used by \code{plot_scaling_fit()}.}
 }
 \value{
-Data frame with one row per scale bin or a long plot-ready data frame.
+A data frame with scale bins. For \code{output = "wide"},
+columns include \code{bin}, \code{scale_value}, \code{n}, \code{actual_observed_mean},
+\code{modeled_observed_mean}, and \code{fitted_ground_up_mean}. For
+\code{output = "plot_ready"}, columns \code{bin}, \code{scale_value}, \code{mean}, and \code{series}
+give the exact long-format data used by \code{plot_scaling_fit()}. Observed and
+modeled observed means incorporate policy terms; the ground-up mean does not.
 }
 \description{
 Bins the fitted scaling variable and compares actual mean observed severity

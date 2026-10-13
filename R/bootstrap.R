@@ -34,8 +34,10 @@
 #' @param refit_threshold For a searched spliced model, whether each bootstrap
 #'   replicate should repeat threshold search. Default `FALSE` reuses the
 #'   selected threshold to keep the bootstrap inexpensive and stable.
-#' @return An object of class `actuarialfitdist_bootstrap` containing coefficient
-#'   estimates and convergence status by replicate.
+#' @return An `actuarialfitdist_bootstrap` list containing `estimates`
+#'     (one row per replicate, including coefficients, convergence and any error),
+#'     `success_rate`, `R`, `type`, and `original` (the input fit). Inspect failures
+#'     before using the empirical distribution of bootstrap estimates.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))

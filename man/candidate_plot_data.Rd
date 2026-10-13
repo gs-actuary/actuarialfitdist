@@ -41,8 +41,12 @@ consumed by \code{plot_candidate_fits(method = "analytic")}.}
 \item{xlim}{Optional plot-ready grid range; not a claim filter.}
 }
 \value{
-Data frame including \code{distribution}, \code{source}, \code{x}, \code{value},
-\code{lower}, \code{upper} for plot-ready output; raw output preserves observed losses.
+A data frame with a \code{distribution} column for each
+successful candidate. \code{output = "raw"} returns actual and simulated
+claim-level observations with \code{observed_loss}, censoring flags and weights.
+\code{output = "plot_ready"} returns \code{source}, \code{x}, \code{value}, \code{lower}, \code{upper}, and
+\code{distribution}, matching the default candidate plot; \code{source = "modeled"}
+denotes expected portfolio probabilities, not Monte Carlo simulations.
 }
 \description{
 Recreates each candidate's row-level deductible truncation and limit

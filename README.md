@@ -10,6 +10,19 @@ The package is deliberately opinionated about one important data assumption:
 
 This is not a hidden implementation detail. It determines the likelihood. Deductibles are treated as left-truncation thresholds: claims below them are assumed absent from the fitted sample. Finite limits are treated as right-censoring thresholds: a claim recorded at the limit is known only to have reached or exceeded that threshold.
 
+## Installation
+
+Until the first CRAN release, install from the public GitHub repository:
+
+```r
+install.packages("remotes") # only needed once
+remotes::install_github("gs-actuary/actuarialfitdist")
+```
+
+After CRAN acceptance, install the released version with
+`install.packages("actuarialfitdist")`. The package works on standard R
+installations; it does not compile C or C++ source code.
+
 ## Quick start: three common workflows
 
 The fitters require **ground-up claim severity**, not net insurer payment.
@@ -26,14 +39,14 @@ claims <- data.frame(loss = rlnorm(400, log(15000), 0.9))
 # 1. Single-family fit, no deductible or censoring limit
 f <- fit_severity(claims, loss = "loss", distribution = "lognormal")
 summary(f)
-plot_fit(f, x_scale = "log10", xlim = c(500, 200000), nsim = 2)
+plot_fit(f, x_scale = "log10", xlim = c(500, 200000))
 
 # 2. Candidate comparison: inspect the fit objects AND the comparison table
 candidates <- fit_severity_candidates(claims, loss = "loss",
   distributions = c("lognormal", "gamma", "weibull"), hessian = FALSE)
 candidates$comparison[order(candidates$comparison$AIC), ]
-plot_candidate_fits(candidates, type = "histogram", nsim = 2)
-head(candidate_plot_data(candidates, nsim = 1, seed = 33))
+plot_candidate_fits(candidates, type = "histogram")
+head(candidate_plot_data(candidates, output = "plot_ready"))
 
 # 3. Translate fits to deductible/payment-limit factors
 severity_factors(candidates, deductible = c(500, 1000),
@@ -70,7 +83,7 @@ lowering `min_tail_exact`; convergence does not establish tail stability.
 * Candidate-distribution comparison using log-likelihood, AIC, BIC, convergence, diagnostics, and downstream factor stability.
 * Spliced body-tail models with fixed or searched thresholds and no required density continuity.
 * Limited expected severities, LERs, deductible factors, ILFs, combined rating factors, and valuation/depreciation adjustments.
-* Simulation-based goodness-of-fit diagnostics that reproduce the actual deductible, limit, and scaling structure.
+* Deterministic analytic and optional simulation-based goodness-of-fit diagnostics that reproduce the actual deductible, limit, and scaling structure.
 * Diagnostics of the assumed severity scaling relationship and of fit within selected loss layers.
 * Numerical Hessian covariance estimates and basic case/parametric bootstrap support.
 * `ggplot2` and `scales` graphics plus public data-building functions for fully customized charts and Plotly workflows.
@@ -234,7 +247,7 @@ severity_factors(
 ## Diagnostics and plotting data
 
 ```r
-plot_fit(fit, type = "density", nsim = 20)
+plot_fit(fit, type = "density")
 
 plot_dat <- fit_plot_data(fit, nsim = 20)
 head(plot_dat)

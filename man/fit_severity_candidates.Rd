@@ -61,7 +61,12 @@ Anomalies include ground-up loss at/below deductible and above a finite
 censoring limit; investigate the valuation basis before fitting.}
 }
 \value{
-An object of class \code{actuarialfitdist_candidates}.
+An \code{actuarialfitdist_candidates} list with \code{fits}
+(named fitted objects or errors), \code{comparison} (one row per requested family),
+\code{excluded_rows}, and \code{excluded_details}. \code{comparison} includes \code{converged},
+\code{logLik}, \code{AIC}, \code{BIC}, \code{error}, and per-family fitting time and optimizer
+evaluations. Failed fits have missing fit statistics. No winning model is
+selected automatically; compare tail behavior and payment factors as well.
 }
 \description{
 Fits several supported families to the same ground-up-loss data and returns
@@ -70,6 +75,14 @@ optimization runtimes, evaluation counts, and convergence codes. The function in
 does not choose a winner automatically; actuarial tail behavior and rating
 factor stability can matter even when information criteria are close.
 }
+\section{Choosing a distribution}{
+
+Fit criteria are comparable only for fits using the same data and
+observation likelihood. Check \code{converged} and \code{error} before comparing
+AIC/BIC. Prefer a distribution with credible tail and layer behavior,
+rather than selecting the smallest AIC mechanically.
+}
+
 \examples{
 set.seed(123)
 d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -77,5 +90,5 @@ candidates <- fit_severity_candidates(d, "loss",
   distributions = c("lognormal", "gamma"), hessian = FALSE)
 candidates$comparison
 candidates$fits$lognormal
-plot_candidate_fits(candidates, nsim = 1)
+plot_candidate_fits(candidates)
 }

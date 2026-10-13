@@ -50,11 +50,10 @@ quantiles searched. Defaults to 0.65 through 0.95.}
 
 \item{threshold_grid}{Number of candidate thresholds used in search mode.}
 
-\item{scale_by}{Optional character scalar naming a numeric severity-scaling
-variable. For homeowners this may be Coverage A; for other lines it may be
-TIV, vehicle value, or a user-created transformation. The package treats
-it generically. Supported families are parameterized so finite mean
-severity is proportional to \code{scale_coef * scale_by + scale_intercept}.}
+\item{scale_by}{Optional character scalar naming a numeric variable (such
+as Coverage A) that scales the body and tail family parameters. Because
+the splice threshold is in absolute severity units, a spliced model's
+overall mean need not be exactly proportional to the scaling variable.}
 
 \item{scale_intercept}{Logical. If \code{FALSE}, the scale intercept is fixed
 exactly at zero. If \code{TRUE}, it is estimated subject to positive fitted
@@ -88,8 +87,12 @@ censoring limit; investigate the valuation basis before fitting.}
 Candidates failing this condition are skipped and described in \code{threshold_search}.}
 }
 \value{
-An \code{actuarialfitdist_fit} object. Search fits also contain a
-\code{threshold_search} data frame.
+An \code{actuarialfitdist_fit} object with body and tail
+coefficients, fitted splice probability, chosen \code{threshold}, fit statistics,
+and the excluded-row audit. If \code{threshold_method = "search"},
+\code{threshold_search} records attempted thresholds, exact uncensored tail counts,
+convergence, fit statistics, and reasons for rejecting candidates. A
+successful optimizer code does not guarantee a stable extrapolated tail.
 }
 \description{
 Fits a two-component severity model with one family below a threshold and a

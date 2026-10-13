@@ -12,6 +12,13 @@
 #' has first converted those observations to the intended ground-up basis.
 #' The package deliberately does not guess or reconstruct this basis.
 #'
+#' @section Observation mechanism versus payment factors:
+#' For fitting, `deductible` and `limit` are **column names** giving each
+#' claim's left-truncation threshold and *ground-up censoring threshold*.
+#' A claim recorded exactly at its finite limit is right-censored. In
+#' `expected_payment()` and `severity_factors()`, `limit` instead means a
+#' **post-deductible insurer payment cap**, supplied as an amount. These
+#' definitions must not be interchanged.
 #' @param data A data frame containing claim-level observations.
 #' @param loss Character scalar naming the ground-up loss column.
 #' @param deductible Optional character scalar naming the deductible column; omitted means no deductible.
@@ -44,7 +51,14 @@
 #'   `"error"` stops and identifies affected original positions.
 #'   Anomalies include ground-up loss at/below deductible and above a finite
 #'   censoring limit; investigate the valuation basis before fitting.
-#' @return An object of class `actuarialfitdist_fit`.
+#' @return An `actuarialfitdist_fit` object. Important components include
+#'     `coefficients` (named estimates on their natural scales), `logLik`, `AIC`,
+#'     `BIC`, `convergence`, and `optimizer_counts`. `data` contains the retained
+#'     observations; `excluded_rows` records original row positions excluded during
+#'     validation, and `excluded_details` explains why. `vcov` is a covariance
+#'     matrix when it can be estimated (`hessian = TRUE`); otherwise it is `NULL`.
+#'     `convergence = 0` is an optimizer diagnostic, not proof that the chosen
+#'     distribution adequately describes the claim tail.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -256,6 +270,11 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
 #' does not choose a winner automatically; actuarial tail behavior and rating
 #' factor stability can matter even when information criteria are close.
 #'
+#' @section Choosing a distribution:
+#' Fit criteria are comparable only for fits using the same data and
+#' observation likelihood. Check `converged` and `error` before comparing
+#' AIC/BIC. Prefer a distribution with credible tail and layer behavior,
+#' rather than selecting the smallest AIC mechanically.
 #' @inheritParams fit_severity
 #' @param distributions Character vector of candidate families. Defaults to all
 #'   supported single-family distributions.
@@ -268,7 +287,12 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
 #'   weights = NULL, fixed = list(), control = list(),
 #'   hessian = TRUE, invalid_rows = c("warn_drop", "error")
 #' )
-#' @return An object of class `actuarialfitdist_candidates`.
+#' @return An `actuarialfitdist_candidates` list with `fits`
+#'     (named fitted objects or errors), `comparison` (one row per requested family),
+#'     `excluded_rows`, and `excluded_details`. `comparison` includes `converged`,
+#'     `logLik`, `AIC`, `BIC`, `error`, and per-family fitting time and optimizer
+#'     evaluations. Failed fits have missing fit statistics. No winning model is
+#'     selected automatically; compare tail behavior and payment factors as well.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -276,7 +300,7 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
 #'   distributions = c("lognormal", "gamma"), hessian = FALSE)
 #' candidates$comparison
 #' candidates$fits$lognormal
-#' plot_candidate_fits(candidates, nsim = 1)
+#' plot_candidate_fits(candidates)
 #' @export
 fit_severity_candidates <- function(data, loss, deductible = NULL, limit = NULL,
                                     distributions = c(

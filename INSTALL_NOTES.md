@@ -1,53 +1,49 @@
-# Installing actuarialfitdist 0.2.0 (development snapshot)
+# Installing actuarialfitdist 0.2.3 (CRAN submission candidate)
 
-The primary ZIP contains the full source tree. Do not overwrite uncommitted
-edits in your existing project; commit or back them up first. The snapshot is
-based on the earlier `actuarialfitdist_0.1.0-checkfix.zip` rather than an
-unverified live pull from GitHub.
+This ZIP contains a complete R package source tree, built from the previously
+shared 0.2.2 numerical-fix source. **Make a commit or backup** before replacing
+existing project files with this source. It does not download or overwrite
+anything automatically.
 
-## Recommended for RStudio development
+## Local development in RStudio
 
-1. Extract the ZIP. The top directory is `actuarialfitdist/`.
-2. Open `actuarialfitdist.Rproj` or the containing folder in RStudio.
-3. Install dependencies with `install.packages(c("devtools", "testthat", "roxygen2", "ggplot2", "scales", "knitr", "rmarkdown"))`.
-4. Run the following in the package project:
+1. Extract this ZIP. Its top-level folder is `actuarialfitdist/`.
+2. Open `actuarialfitdist.Rproj` in RStudio.
+3. Install missing development dependencies if necessary:
+
+```r
+install.packages(c("devtools", "testthat", "roxygen2",
+                   "ggplot2", "scales", "knitr", "rmarkdown"))
+```
+
+4. From the package project, run:
 
 ```r
 devtools::document()
 devtools::test()
-devtools::check(document = FALSE, args = "--as-cran")
-# Optional, only after success:
+devtools::check_doc_fields()
+urlchecker::url_check() # first install.packages("urlchecker") if needed
+devtools::check(document = FALSE, args = "--as-cran",
+                remote = TRUE, manual = TRUE)
+```
+
+5. Examine the `man/` and `NAMESPACE` diff produced by `document()`.
+Review the displayed HTML/PDF help for the fitting, candidate, plotting,
+factor, simulation, bootstrap, and S3 methods.
+6. Install locally to open vignettes:
+
+```r
 devtools::install(build_vignettes = TRUE)
 vignette("actuarialfitdist", package = "actuarialfitdist")
 vignette("candidate-comparisons", package = "actuarialfitdist")
 ```
 
-## Minimum post-install smoke test
+7. Check R-devel via `devtools::check_win_devel()`, and rerun the large
+synthetic numerical validation suite that identified 0.2.1 failures.
 
-```r
-library(actuarialfitdist)
-set.seed(8)
-d <- data.frame(loss = rlnorm(400, log(15000), 0.85))
-fits <- fit_severity_candidates(d, "loss", distributions = c("lognormal", "gamma"), hessian = FALSE)
-print(fits$comparison)
-print(plot_candidate_fits(fits, nsim = 1))
-print(head(severity_factors(fits, deductible = c(500, 1000),
-   limit = c(25000, 50000), grid = "paired")))
-```
+The documentation now has a roxygen2 source for the shared S3 methods topic;
+the Rd files are included so users can read help immediately, but regeneration
+with your installed roxygen2 is necessary before certifying CRAN readiness.
 
-When checking through `R CMD check`, first build with `R CMD build actuarialfitdist`.
-This ZIP has pre-generated Rd pages; use `devtools::document()` to regenerate
-those pages and the NAMESPACE from the roxygen comments before final check.
-See `CRAN_READINESS.md` for the remaining verification and statistical caveats.
-
-
-## Documentation in 0.2.1 (repaired)
-
-Documentation for public entry points is maintained using roxygen2 comments in
-`R/*.R`; most `man/*.Rd` files are generated outputs. The consolidated
-`man/actuarialfitdist_fit_methods.Rd` file remains hand-maintained for
-methods whose only roxygen annotation is `@export`. Run `devtools::document()`
-when editing roxygen comments, then `devtools::test()` and `devtools::check()`.
-The `@docType package` warning has been removed in favor of `_PACKAGE` and
-S3 method registration for `print.summary.actuarialfitdist_fit` is declared
-with `@export`.
+**No R runtime was available to execute R CMD check when producing this ZIP.**
+Please report any errors, warnings, or notes from the final check.

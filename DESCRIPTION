@@ -1,7 +1,7 @@
 Package: actuarialfitdist
 Type: Package
-Title: Actuarial Severity Distribution Fitting for Limits and Deductibles
-Version: 0.2.2
+Title: Actuarial Severity Fitting with Limits and Deductibles
+Version: 0.2.3
 Authors@R: person("Greg", "Sollenberger", email = "yagreg7@yahoo.com", role = c("aut", "cre", "cph"))
 Description: Fits actuarial claim severity distributions to ground-up loss data while
     accounting for deductible truncation, policy-limit censoring, observation weights,
@@ -12,7 +12,9 @@ Description: Fits actuarial claim severity distributions to ground-up loss data 
     uncertainty estimation. The package is designed for property and casualty
     actuarial applications in which analysts fit ground-up severity and translate the
     fitted distribution into pricing factors for limits, deductibles, and valuation
-    provisions.
+    provisions. For background on statistical severity modeling, see Klugman,
+    Panjer, and Willmot (2019, ISBN:9781119523789),
+    "Loss Models: From Data to Decisions", 5th edition.
 License: MIT + file LICENSE
 URL: https://github.com/gs-actuary/actuarialfitdist
 BugReports: https://github.com/gs-actuary/actuarialfitdist/issues

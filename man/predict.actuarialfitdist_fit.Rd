@@ -30,9 +30,10 @@
 \item{...}{Unused.}
 }
 \value{
-Numeric vector of fitted ground-up quantities. For \code{type = "mean"}
-or \code{"quantile"} the unit is severity; for \code{"survival"} or \code{"cdf"}
-values are probabilities. For \code{"density"} values are densities.
+Numeric fitted values. Means and
+quantiles are in ground-up severity units; survival and CDF results are
+probabilities, and density results are probability densities. Results
+are conditional on positive ground-up severity.
 }
 \description{
 Evaluates fitted means, quantiles, survival probabilities, CDF values, or

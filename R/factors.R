@@ -27,7 +27,9 @@
 #' @param object A fitted model.
 #' @param limit Positive severity limit.
 #' @param scale_value Optional scaling value.
-#' @return Numeric limited expected severity.
+#' @return Numeric vector of expected ground-up severity
+#'     limited at each supplied `limit`, in the same currency units as the loss
+#'     data. `Inf` requests the unlimited mean when it exists.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -52,7 +54,10 @@ limited_expected_value <- function(object, limit, scale_value = NULL) {
 #' @param deductible Deductible amount.
 #' @param scale_value Optional scaling value.
 #' @param valuation_factor Multiplicative valuation factor applied before the deductible.
-#' @return Numeric LER.
+#' @return Numeric vector of loss elimination ratios:
+#'     one minus expected post-deductible payment divided by expected payment
+#'     without a deductible, holding the valuation factor fixed. Returns `NA`
+#'     when the denominator is not finite and positive.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -84,7 +89,9 @@ loss_elimination_ratio <- function(object, deductible, scale_value = NULL, valua
 #' @param scale_value Optional scaling value.
 #' @param deductible Deductible applied to both target and base coverage.
 #' @param valuation_factor Multiplicative valuation factor applied before deductible.
-#' @return Numeric ILF.
+#' @return Numeric vector of increased limits factors:
+#'     expected payment at each target `limit` divided by the payment at
+#'     `base_limit`, for the same deductible and valuation assumptions.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -244,6 +251,12 @@ increased_limits_factor <- function(object, limit, base_limit, scale_value = NUL
 #' limit. Fitting remains agnostic to depreciation: historical losses must have
 #' already been placed on the analyst's chosen ground-up basis.
 #'
+#' @section What the factor limit means:
+#' Here `limit` is the maximum **payment after applying the deductible**.
+#' It is not the ground-up censoring threshold in `fit_severity()`.
+#' `rating_factor` compares each scenario's expected payment against the
+#' supplied base deductible, limit and valuation terms. `grid = "cross"`
+#' can create many scenarios when several input vectors are long.
 #' @param object A fitted model or candidate-comparison object.
 #' @param deductible Vector of target deductibles.
 #' @param limit Vector of target payment limits; `Inf` is allowed.
@@ -254,7 +267,14 @@ increased_limits_factor <- function(object, limit, base_limit, scale_value = NUL
 #' @param base_valuation_factor Base valuation factor.
 #' @param grid `"cross"` (default) forms the Cartesian product of inputs;
 #'   `"paired"` recycles vectors to matching scenario rows.
-#' @return Long-format data frame.
+#' @return A long-format data frame with one row per coverage
+#'     scenario and successful distribution. Columns include `distribution`,
+#'     `model`, `scale_value`, `deductible`, `limit`, `valuation_factor`,
+#'     `expected_payment`, `limited_expected_severity`, `unlimited_mean`, `LER`,
+#'     `ILF`, `rating_factor`, and the three `base_*` assumptions. A value can be
+#'     `NA` when the relevant expectation or denominator does not exist. With
+#'     `grid = "cross"`, input vectors form a Cartesian product; with `"paired"`,
+#'     they form positionally matched scenarios.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -291,7 +311,9 @@ severity_factors <- function(object, deductible, limit, scale_value = NULL,
 #' @param object A candidate-comparison object.
 #' @param metric One output column from `severity_factors()` to compare.
 #' @param ... Arguments passed to `severity_factors()`.
-#' @return Wide data frame with one column per candidate distribution.
+#' @return A wide data frame with the coverage scenario columns
+#'     used by `severity_factors()` and one `value.<distribution>` column for
+#'     each successful candidate, for the chosen `metric`.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
@@ -322,7 +344,11 @@ compare_factors <- function(object, metric = "rating_factor", ...) {
 #' @param scale_value Optional scaling value(s).
 #' @param valuation_factor Nonnegative multiplicative valuation factor applied
 #'   to ground-up severity before deductible and limit.
-#' @return Numeric expected payment(s).
+#' @return Numeric vector of expected insurer payments,
+#'     in loss currency units, calculated as the expectation of
+#'     `pmin(pmax(valuation_factor * X - deductible, 0), limit)` for positive
+#'     ground-up severity `X`. Here `limit` is a payment cap *after* deductible,
+#'     not the ground-up observation censoring limit used while fitting.
 #' @examples
 #' set.seed(123)
 #' d <- data.frame(loss = rlnorm(120, log(10000), 0.8))

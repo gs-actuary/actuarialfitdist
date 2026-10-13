@@ -53,8 +53,11 @@ earlier simulation-based diagnostic; \code{nsim} is used only in this mode.}
 \item{y_text_size}{Vertical-axis tick label font size in points.}
 }
 \value{
-ggplot object. Use \code{fit_plot_data(output = "plot_ready", ...)}
-to get the exact analytic plot data.
+A \code{ggplot2} plot comparing observed severity with modeled
+observations on the same deductible, limit and scaling basis. The default
+analytic method uses deterministic expected probabilities; choose
+\code{method = "simulation"} for a Monte Carlo comparison. To customize the
+underlying analytic values, use \code{fit_plot_data(output = "plot_ready")}.
 }
 \description{
 The default log10 severity axis reveals the body of heavy-tailed claim
@@ -62,9 +65,18 @@ distributions without discarding large losses. For histograms, ggplot
 computes density in log-severity coordinates, ensuring simulated and
 observed bars use the same normalization. Axis limits only zoom the view.
 }
+\section{Analytic versus simulation plots}{
+
+\code{method = "analytic"} (the default) calculates expected observed-claim
+probabilities across the actual mix of deductibles, limits, and scaling
+values. It is deterministic and ignores \code{nsim} and \code{seed}. Use
+\code{method = "simulation"} when you want to see Monte Carlo variability;
+\code{nsim} controls the number of simulated portfolios in that mode.
+}
+
 \examples{
 set.seed(123)
 d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
 fit <- fit_severity(d, "loss", distribution = "lognormal", hessian = FALSE)
-plot_fit(fit, x_scale = "log10", nsim = 1, seed = 1)
+plot_fit(fit, x_scale = "log10")
 }

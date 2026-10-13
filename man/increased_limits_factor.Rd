@@ -27,7 +27,9 @@ increased_limits_factor(
 \item{valuation_factor}{Multiplicative valuation factor applied before deductible.}
 }
 \value{
-Numeric ILF.
+Numeric vector of increased limits factors:
+expected payment at each target \code{limit} divided by the payment at
+\code{base_limit}, for the same deductible and valuation assumptions.
 }
 \description{
 Computes the ratio of expected payments at a target limit to expected

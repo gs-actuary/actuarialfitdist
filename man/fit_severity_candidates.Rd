@@ -49,7 +49,9 @@ intercept is estimated, the package sets the optimizer's \code{parscale} for
 that coordinate to \code{max(1000, 0.1 * median(loss))}; other free coordinates
 use 1. Explicit \code{control$parscale} overrides this heuristic and must
 follow the order in \verb{$optim_par}. This affects numerical optimization,
-not the statistical scale model or reported coefficients.}
+not the statistical scale model or reported coefficients. The fitter
+checks a zero-intercept anchor where applicable and retries numerically
+sensitive families. Invalid apparent convergence is rejected.}
 
 \item{hessian}{Logical; calculate a numerical Hessian and covariance matrix.}
 

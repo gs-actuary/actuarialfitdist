@@ -24,16 +24,34 @@
   list(s = s, shape = shape)
 }
 
-.afd_fit_cdf <- function(fit, x, scale_value = NULL, lower.tail = TRUE) {
+# Log survival conditional on a positive ground-up loss. Work in log space
+# throughout: 1 - F(x) underflows for deductions in the extreme tail.
+.afd_fit_logsurv <- function(fit, x, scale_value = NULL) {
   sv <- .afd_require_scale_value(fit, scale_value)
   n <- max(length(x), if (all(is.na(sv))) 1L else length(sv))
   x <- rep(x, length.out = n)
   if (fit$model == "single") {
     parts <- .afd_single_eval_parts(fit, if (all(is.na(sv))) NULL else rep(sv, length.out = n))
     s <- rep(parts$s, length.out = n)
-    ans <- .afd_positive_cdf(fit$distribution, x, s, parts$shape)
-    if (!lower.tail) ans <- 1 - ans
-    return(ans)
+    log_s <- .afd_p(fit$distribution, x, s, parts$shape,
+                    lower.tail = FALSE, log.p = TRUE)
+    log_s0 <- .afd_p(fit$distribution, 0, s, parts$shape,
+                     lower.tail = FALSE, log.p = TRUE)
+    return(ifelse(x <= 0, 0, pmin(0, log_s - log_s0)))
+  }
+  z <- if (is.null(fit$columns$scale_by)) NULL else rep(sv, length.out = n)
+  .afd_splice_cdf(x, fit$threshold, fit$body, fit$tail,
+                  as.list(fit$coefficients), z, lower.tail = FALSE, log.p = TRUE)
+}
+
+.afd_fit_cdf <- function(fit, x, scale_value = NULL, lower.tail = TRUE) {
+  sv <- .afd_require_scale_value(fit, scale_value)
+  n <- max(length(x), if (all(is.na(sv))) 1L else length(sv))
+  x <- rep(x, length.out = n)
+  if (fit$model == "single") {
+    log_surv <- .afd_fit_logsurv(fit, x, if (all(is.na(sv))) NULL else sv)
+    if (!lower.tail) return(exp(log_surv))
+    return(-expm1(log_surv))
   }
   z <- if (is.null(fit$columns$scale_by)) NULL else rep(sv, length.out = n)
   .afd_splice_cdf(x, fit$threshold, fit$body, fit$tail,

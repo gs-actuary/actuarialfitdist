@@ -245,7 +245,7 @@ head(plot_dat)
 See the vignette and `inst/examples/` for property-damage limits, collision deductibles, homeowners scaling, spliced models, weights, parameter fixing, depreciation, bootstrap inference, and Plotly examples.
 
 
-## Faster candidate fitting and plot data (0.2.1)
+## Faster candidate fitting and plot data (0.2.2)
 
 With `scale_intercept = TRUE`, BFGS now automatically scales the additive
 intercept coordinate by `max(1000, 0.10 * median(loss))`. That affects only

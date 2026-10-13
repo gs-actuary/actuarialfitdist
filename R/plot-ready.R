@@ -52,9 +52,8 @@
   positive <- ws > 0
   d <- d[positive]; u <- u[positive]; z <- z[positive]; ws <- ws[positive]
   scale_arg <- if (is.null(cols$scale_by)) NULL else z
-  Fd <- .afd_fit_cdf(fit, d, scale_arg)
-  surv <- 1 - Fd
-  if (any(!is.finite(surv) | surv <= 0)) {
+  log_sd <- .afd_fit_logsurv(fit, d, scale_arg)
+  if (any(!is.finite(log_sd))) {
     .afd_stop("A fitted model gives zero/invalid survival above a selected deductible; cannot construct fitted plot probabilities.")
   }
   out <- numeric(length(grid))
@@ -66,8 +65,9 @@
     val[upper] <- 1
     if (any(interior)) {
       zz <- if (is.null(scale_arg)) NULL else z[interior]
-      Fx <- .afd_fit_cdf(fit, rep(x, sum(interior)), zz)
-      val[interior] <- pmin(1, pmax(0, (Fx - Fd[interior]) / surv[interior]))
+      log_sx <- .afd_fit_logsurv(fit, rep(x, sum(interior)), zz)
+      log_ratio <- pmin(0, log_sx - log_sd[interior])
+      val[interior] <- pmin(1, pmax(0, -expm1(log_ratio)))
     }
     out[j] <- sum(ws * val) / sum(ws)
   }

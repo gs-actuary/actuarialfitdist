@@ -26,15 +26,23 @@
     log_surv_d <- .afd_p(dist, deductible, s, shape_params,
                          lower.tail = FALSE, log.p = TRUE)
   }
+  # Deductible survival probabilities may legitimately be very small, but
+  # at an astronomically remote trial parameter the subtraction of two huge
+  # log quantities loses the entire likelihood. Never accept cancellation as
+  # a perfect fit (e.g. Burr logLik == 0 for 85k widely varying claims).
+  if (any(!is.finite(log_surv_d)) || any(log_surv_d < -1e7)) return(NULL)
   censored <- is.finite(limit) & x >= limit
   ll <- numeric(length(x))
   exact <- !censored
   if (any(exact)) {
-    ll[exact] <- .afd_d(dist, x[exact], s[exact], shape_params, log = TRUE) - log_surv_d[exact]
+    log_density <- .afd_d(dist, x[exact], s[exact], shape_params, log = TRUE)
+    if (any(!is.finite(log_density)) || any(log_density < -1e7)) return(NULL)
+    ll[exact] <- log_density - log_surv_d[exact]
   }
   if (any(censored)) {
     ll[censored] <- .afd_p(dist, limit[censored], s[censored], shape_params, lower.tail = FALSE, log.p = TRUE) - log_surv_d[censored]
   }
+  if (any(!is.finite(ll))) return(NULL)
   list(loglik = ll, scale = s, censored = censored, shape_params = shape_params)
 }
 

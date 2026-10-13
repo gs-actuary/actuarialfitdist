@@ -36,7 +36,9 @@
 #'   that coordinate to `max(1000, 0.1 * median(loss))`; other free coordinates
 #'   use 1. Explicit `control$parscale` overrides this heuristic and must
 #'   follow the order in `$optim_par`. This affects numerical optimization,
-#'   not the statistical scale model or reported coefficients.
+#'   not the statistical scale model or reported coefficients. The fitter
+#'   checks a zero-intercept anchor where applicable and retries numerically
+#'   sensitive families. Invalid apparent convergence is rejected.
 #' @param hessian Logical; calculate a numerical Hessian and covariance matrix.
 #' @param invalid_rows `"warn_drop"` excludes anomalous rows with a warning (default);
 #'   `"error"` stops and identifies affected original positions.
@@ -75,16 +77,120 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
     -ll
   }
 
-  if (length(packed$start)) {
-    opt <- stats::optim(
-      par = packed$start, fn = objective, method = "BFGS",
-      control = optim_control
+  # Fit the nested zero-intercept model first when an additive intercept is
+  # free. Its maximum is a likelihood floor for the larger model. This also
+  # gives a data-informed starting point close to the correct scaling slope.
+  # In particular, it prevents a constant-scale local optimum from winning
+  # simply because optim() reports BFGS convergence code zero.
+  anchor <- NULL
+  if (!is.null(z) && isTRUE(scale_intercept) &&
+      "scale_intercept" %in% packed$unknown) {
+    anchor_control <- control
+    anchor_control$parscale <- NULL  # Different parameter dimension/order.
+    anchor <- tryCatch(
+      fit_severity(data, loss = loss_col, deductible = ded_col, limit = lim_col,
+                   distribution = dist, scale_by = scale_col,
+                   scale_intercept = FALSE, weights = weight_col,
+                   fixed = packed$fixed, control = anchor_control,
+                   hessian = FALSE, invalid_rows = "error"),
+      error = function(e) NULL
     )
-    optim_par <- opt$par
-    convergence <- opt$convergence
-    message <- opt$message
-    value <- opt$value
-    optim_counts <- opt$counts
+    if (!is.null(anchor) && anchor$convergence != 0L) anchor <- NULL
+  }
+
+  if (length(packed$start)) {
+    # Internal optimizers use the encoded (log-positive) parameterization.
+    # Starts from several well-defined points are needed for flexible families.
+    # Only a finite, numerically admissible, converged maximum is accepted.
+    replace_start <- function(seed, name, natural) {
+      if (name %in% packed$unknown) {
+        seed[name] <- if (spec[[name]]$transform == "positive") log(natural) else natural
+      }
+      seed
+    }
+    starts <- list()
+    if (!is.null(anchor)) {
+      warm <- packed$start
+      for (nm in intersect(names(anchor$coefficients), packed$unknown)) {
+        warm <- replace_start(warm, nm, anchor$coefficients[[nm]])
+      }
+      warm <- replace_start(warm, "scale_intercept", 0)
+      starts[[length(starts) + 1L]] <- warm
+    }
+    starts[[length(starts) + 1L]] <- packed$start
+    if (dist == "gamma" && "shape" %in% packed$unknown) {
+      for (shape in c(0.75, 4)) {
+        starts[[length(starts) + 1L]] <- replace_start(packed$start, "shape", shape)
+      }
+    } else if (dist == "burr" &&
+               any(c("shape1", "shape2") %in% packed$unknown)) {
+      for (pair in list(c(0.9, 1.5), c(2.5, 1.5))) {
+        seed <- replace_start(packed$start, "shape1", pair[1L])
+        starts[[length(starts) + 1L]] <- replace_start(seed, "shape2", pair[2L])
+      }
+    }
+
+    best <- NULL
+    best_control <- optim_control
+    total_counts <- c("function" = 0, "gradient" = 0)
+    attempts <- 0L
+    run_start <- function(seed, ctl) {
+      tryCatch(suppressWarnings(stats::optim(
+        par = seed, fn = objective, method = "BFGS", control = ctl
+      )), error = function(e) NULL)
+    }
+    for (seed in starts) {
+      trial <- run_start(seed, optim_control)
+      attempts <- attempts + 1L
+      if (is.null(trial)) next
+      total_counts <- total_counts + trial$counts[names(total_counts)]
+      if (trial$convergence != 0L || !is.finite(trial$value) ||
+          trial$value >= 1e90) next
+      trial_components <- .afd_single_components(dist, packed$decode(trial$par),
+                                                  x, d, u, z, groups)
+      if (is.null(trial_components) ||
+          any(!is.finite(trial_components$loglik[w > 0]))) next
+      # The unrestricted model must be at least as good as its nested submodel.
+      if (!is.null(anchor) && -trial$value < anchor$logLik -
+          1e-8 * max(1, abs(anchor$logLik))) next
+      if (is.null(best) || trial$value < best$value) best <- trial
+      # Retain normal-family speed; search alternative basins for the most
+      # numerically delicate distributions even after one converged fit.
+      if (!dist %in% c("gamma", "burr") ||
+          !any(c("shape", "shape1", "shape2") %in% packed$unknown)) break
+    }
+    # A user-specified parscale is honored. For the automatic heuristic, retry
+    # the anchor at an alternative scale if the first attempts were rejected.
+    if (is.null(best) && !is.null(anchor) && is.null(control$parscale)) {
+      ctl <- optim_control
+      j <- match("scale_intercept", packed$unknown)
+      ctl$parscale[j] <- max(50000, stats::median(x))
+      trial <- run_start(starts[[1L]], ctl)
+      attempts <- attempts + 1L
+      if (!is.null(trial)) {
+        total_counts <- total_counts + trial$counts[names(total_counts)]
+        if (trial$convergence == 0L && is.finite(trial$value) && trial$value < 1e90 &&
+            -trial$value >= anchor$logLik - 1e-8 * max(1, abs(anchor$logLik))) {
+          cc <- .afd_single_components(dist, packed$decode(trial$par), x, d, u, z, groups)
+          if (!is.null(cc) && all(is.finite(cc$loglik[w > 0]))) {
+            best <- trial
+            best_control <- ctl
+          }
+        }
+      }
+    }
+    if (is.null(best)) {
+      .afd_stop("No valid converged maximum was found for `", dist,
+                "`. The optimizer reached invalid or inferior parameter values; ",
+                "do not use this family's information criteria. Try a different ",
+                "starting configuration or a simpler model.")
+    }
+    optim_par <- best$par
+    convergence <- best$convergence
+    message <- best$message
+    value <- best$value
+    optim_counts <- total_counts
+    optim_control <- best_control
   } else {
     optim_par <- numeric()
     convergence <- 0L
@@ -94,7 +200,7 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
   }
   params <- packed$decode(optim_par)
   components <- .afd_single_components(dist, params, x, d, u, z)
-  if (is.null(components) || !is.finite(value) ||
+  if (is.null(components) || !is.finite(value) || value >= 1e90 ||
       any(!is.finite(components$loglik[w > 0]))) {
     .afd_stop("The fitted parameter combination is invalid.")
   }
@@ -126,6 +232,7 @@ fit_severity <- function(data, loss, deductible = NULL, limit = NULL, distributi
     convergence = convergence, message = message,
     optim_par = optim_par, npar = k, hessian = H, vcov = Vnat,
     optimizer_counts = optim_counts, optimizer_control = optim_control,
+    optimizer_attempts = if (length(packed$start)) attempts else 0L,
     elapsed_seconds = unname(proc.time()[["elapsed"]] - started),
     data = data, columns = list(loss = loss_col, deductible = ded_col, limit = lim_col,
                                 scale_by = scale_col, weights = weight_col),

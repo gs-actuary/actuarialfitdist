@@ -139,20 +139,28 @@
   vals <- unlist(params, use.names = FALSE)
   if (length(vals) && any(!is.finite(vals))) return(FALSE)
 
+  # Prevent numerically meaningless tail/shape combinations. In particular,
+  # a shape approaching zero with another approaching infinity can make both
+  # log-density and log-survival exceed floating-point precision, producing
+  # a falsely perfect conditional likelihood after subtraction.
+  admissible <- function(x) is.finite(x) && x >= 1e-5 && x <= 1e5
   switch(dist,
-    weibull = is.finite(params$shape) && params$shape > 0,
-    gamma = is.finite(params$shape) && params$shape > 0,
-    lognormal = is.finite(params$sdlog) && params$sdlog > 0,
-    pareto2 = is.finite(params$shape) && params$shape > 0,
-    burr = is.finite(params$shape1) && params$shape1 > 0 &&
-      is.finite(params$shape2) && params$shape2 > 0,
-    normal = is.finite(params$cv) && params$cv > 0,
+    weibull = admissible(params$shape),
+    gamma = admissible(params$shape),
+    lognormal = admissible(params$sdlog),
+    pareto2 = admissible(params$shape),
+    burr = admissible(params$shape1) && admissible(params$shape2),
+    normal = admissible(params$cv),
     exponential = TRUE,
-    loglogistic = is.finite(params$shape) && params$shape > 0,
-    invgauss = is.finite(params$shape) && params$shape > 0,
+    loglogistic = admissible(params$shape),
+    invgauss = admissible(params$shape),
     gpd = is.finite(params$xi),
     FALSE
   )
+}
+
+.afd_log1pexp <- function(z) {
+  pmax(z, 0) + log1p(exp(-abs(z)))
 }
 
 .afd_d <- function(dist, x, scale, params, log = FALSE) {
@@ -173,11 +181,11 @@
       pareto2 = ifelse(xx >= 0,
                        log(params$shape) - log(ss) - (params$shape + 1) * log1p(xx / ss), -Inf),
       burr = {
-        y <- xx / ss
+        logy <- log(xx) - log(ss)
         ifelse(xx > 0,
                log(params$shape1) + log(params$shape2) - log(ss) +
-                 (params$shape1 - 1) * log(y) -
-                 (params$shape2 + 1) * log1p(y^params$shape1), -Inf)
+                 (params$shape1 - 1) * logy -
+                 (params$shape2 + 1) * .afd_log1pexp(params$shape1 * logy), -Inf)
       },
       normal = stats::dnorm(xx, mean = ss, sd = params$cv * ss, log = TRUE),
       exponential = ifelse(xx >= 0, -log(ss) - xx / ss, -Inf),
@@ -240,7 +248,7 @@
 
   log_surv <- suppressWarnings(switch(dist,
     pareto2 = ifelse(q < 0, 0, -params$shape * log1p(q / scale)),
-    burr = ifelse(q <= 0, 0, -params$shape2 * log1p((q / scale)^params$shape1)),
+    burr = ifelse(q <= 0, 0, -params$shape2 * .afd_log1pexp(params$shape1 * (log(q) - log(scale)))),
     exponential = ifelse(q < 0, 0, -q / scale),
     loglogistic = ifelse(q <= 0, 0, -log1p((q / scale)^params$shape)),
     invgauss = {

@@ -1,3 +1,13 @@
+# actuarialfitdist 0.2.2 (numerical-stability update)
+
+* Fit a zero-intercept nested anchor before estimating a free scaling intercept. Reject an apparently converged free-intercept fit if its log likelihood is materially worse than the nested solution.
+* Retry Gamma/Burr optimizations from multiple shape starts, report `optimizer_attempts`, reject inadmissible final fits, and avoid pathological near-zero/astronomical shape values that cause catastrophic floating-point cancellation.
+* Compute Burr log-density and log-survival using stable log1p-exp expressions.
+* Construct deterministic fitted severity-plot probabilities from conditional **log-survival ratios** rather than `1 - F(d)` to avoid loss of tail precision.
+* Candidate fitting reports failed families as missing AIC/BIC rather than rewarding degenerate fits.
+* Add tests for heavy-censoring, large-scale covariates, nested intercept likelihood, Burr degeneracy, and extreme-tail plot survival.
+* These changes prioritize fit validity over the fastest possible fitting time. Source is distributed for independent R CMD check; CRAN checks still required on a machine with R.
+
 # actuarialfitdist 0.2.1
 
 * Corrected roxygen2 help text so mathematical expressions are not interpreted as cross-reference links. Qualified utils::head/tail and made ggplot data-mask references explicit for clean R CMD check.

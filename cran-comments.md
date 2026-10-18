@@ -1,3 +1,12 @@
+## Resubmission
+
+This is a resubmission following the initial CRAN incoming pre-tests.
+
+- Reduced the sample size in the `fit_spliced_severity()` example from 120 to 50 observations to address the Windows example execution-time NOTE.
+- The remaining incoming-feasibility NOTE concerns the expected new-submission status and spelling flags for the legitimate author surnames Klugman, Panjer, and Willmot, and the edition notation "th".
+
+All other checks passed in the previous submission.
+
 ## Submission status
 
 Initial CRAN submission of actuarialfitdist 0.2.3.

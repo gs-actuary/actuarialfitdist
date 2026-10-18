@@ -107,7 +107,7 @@ left truncation and limits define right censoring.
 }
 \examples{
 set.seed(123)
-d <- data.frame(loss = rlnorm(120, log(10000), 0.8))
+d <- data.frame(loss = rlnorm(50, log(10000), 0.8))
 fit <- fit_spliced_severity(d, "loss", body = "lognormal", tail = "pareto2",
   threshold = as.numeric(stats::quantile(d$loss, 0.75)), hessian = FALSE,
   min_tail_exact = 5)
